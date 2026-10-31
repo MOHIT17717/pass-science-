@@ -36,27 +36,31 @@ Date checked: 2026-10-31 (Local Time: 23:19 IST)
 
 ## 4. Version Control
 - **Git Version**: `git version 2.46.2.windows.1`
-- **Git Repository Status**: Not initialized (`fatal: not a git repository (or any of the parent directories): .git`)
+- **Git Repository Status**: Initialized on branch `master` (Baseline commit: `ebac724`)
 - **Git User Identity Configured**:
   - Name: `MOHIT17717`
   - Email: `mohit17717@gmail.com`
 - **Verification Evidence**:
   - `git --version` -> `git version 2.46.2.windows.1` (Exit code 0)
-  - `git status` -> `fatal: not a git repository` (Exit code 1)
+  - `git status` -> On branch master (Exit code 0)
+  - `git log -1` -> Commit `ebac724af5bd33780a1ad58a2a1b072d95f24d6a` (Exit code 0)
   - `git config --list` -> `user.name=MOHIT17717`, `user.email=mohit17717@gmail.com` (Exit code 0)
 
 ## 5. Software Build Toolchain & Dependencies Status
-- **C++ Compiler**: **NOT INSTALLED / NOT IN PATH [BLOCKED]**
+- **C++ Compiler**: **INSTALLED AND VERIFIED (x64)**
+  - Compiler: Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36260 for x64
+  - Environment: Visual Studio 2026 Developer Command Prompt v18.11.3 (BuildTools)
+  - Toolset path: `C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64\cl.exe`
+  - Target Architecture: x64 (`VSCMD_ARG_TGT_ARCH=x64`)
+  - Windows SDK: `10.0.26100.0`
   - Verification Evidence:
-    - `where.exe cl` -> Not found (Exit code 1)
-    - `where.exe gcc` -> Not found (Exit code 1)
-    - `where.exe clang` -> Not found (Exit code 1)
-    - Checked `C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe` -> False
-    - Registry inspection shows Microsoft Visual C++ 2013 and v14 Redistributables (x86/x64) installed, but no MSVC compiler/build tools.
-- **CMake**: **NOT INSTALLED / NOT IN PATH [BLOCKED]**
+    - `cmd /c "vcvars64.bat && cl.exe"` -> Version 19.51.36260 for x64 (Exit code 0)
+- **CMake**: **INSTALLED AND VERIFIED**
+  - Version: `4.5.0-rc2`
+  - Path: `C:\Program Files\CMake\bin\cmake.exe`
+  - Generator: `Visual Studio 18 2026 -A x64`
   - Verification Evidence:
-    - `cmake --version` -> CommandNotFoundException (Exit code 1)
-    - `where.exe cmake` -> Not found (Exit code 1)
+    - `cmake --version` -> `cmake version 4.5.0-rc2` (Exit code 0)
 - **Qt 6 & Kits**: **NOT INSTALLED / NO LONGER REQUIRED**
   - Architecture status: Removed from approved stack per ADR-002 (Electron + React + TypeScript + Three.js + C++17 backend); Qt is no longer a prerequisite.
   - Verification Evidence:
@@ -71,10 +75,11 @@ Date checked: 2026-10-31 (Local Time: 23:19 IST)
   - `where.exe ninja` -> Not found (Exit code 1)
 
 ## 6. Build Status & Blocker Summary
-- **Current Build Readiness**: **BLOCKED** on missing C++ build toolchain (MSVC compiler and CMake).
+- **Current Build Readiness**: **READY FOR CORE BUILD AND TESTS**
 - **Prerequisites Status for Approved Architecture (Electron + React + C++17 Backend)**:
-  1. C++17 Compiler: **BLOCKED** (MSVC x64 via Visual Studio 2022 Build Tools recommended).
-  2. CMake 3.20+: **BLOCKED** (command-line tool missing in PATH).
-  3. Node.js & npm: **AVAILABLE** (`node v22.20.0`, `npm 11.11.1`).
-  4. Qt 6: **NOT NEEDED** (superseded by Electron + React + Three.js frontend).
-  5. Baseline Git repository: **PENDING** (`git init` awaiting explicit user authorization).
+  1. C++17 Compiler: **VERIFIED** (MSVC 19.51.36260 x64).
+  2. CMake 3.20+: **VERIFIED** (CMake 4.5.0-rc2).
+  3. C++ Core Build & CTest: **VERIFIED** (`uew_core.lib` and `uew_core_tests.exe` built and 100% passed in Task 03).
+  4. Node.js & npm: **VERIFIED** (`node v22.20.0`, `npm 11.11.1`).
+  5. Baseline Git repository: **INITIALIZED** (`ebac724`).
+  6. Qt 6: **NOT NEEDED** (superseded by Electron + React + Three.js frontend).

@@ -17,6 +17,16 @@ Append one entry per verification run.
 | 2026-10-31 23:41 IST | Task 02 | Win11 x64 / i7-1255U | `Get-FileHash SHA256 (thermal files & test)` | 0 | All 4 files unmodified, hashes verified identical | `docs/ARCHITECTURE.md` |
 | 2026-11-01 00:03 IST | Task 02 (Rev) | Win11 x64 / i7-1255U | `node --version; npm --version` | 0 | Node v22.20.0, npm 11.11.1 verified | `docs/ENVIRONMENT.md` |
 | 2026-11-01 00:04 IST | Task 02 (Rev) | Win11 x64 / i7-1255U | `Get-FileHash SHA256 (thermal files & test)` | 0 | Documentation-only migration to Electron+React+C++17; thermal backend and tests preserved byte-for-byte; no build/test claimed | `docs/ARCHITECTURE.md` |
+| 2026-11-01 00:11 IST | Task 03 | Win11 x64 / i7-1255U | `where.exe cl; where.exe cmake; where.exe git; where.exe node; where.exe npm` | 0 | Git (2.46.2), Node (22.20.0), npm (11.11.1) found; cl and cmake NOT found (BLOCKED) | `docs/ENVIRONMENT.md` |
+| 2026-11-01 00:12 IST | Task 03 | Win11 x64 / i7-1255U | `Get-FileHash SHA256 (thermal files & test)` | 0 | FEM sources and tests verified identical to baseline | `CMakeLists.txt` |
+| 2026-11-01 00:13 IST | Task 03 | Win11 x64 / i7-1255U | `git init; git add .; git commit` | 0 | Initialized Git repository; clean baseline commit `ebac724` created | Git log `ebac724` |
+| 2026-11-01 00:13 IST | Task 03 | Win11 x64 / i7-1255U | `cmake -S . -B build` | 1 | CommandNotFoundException: cmake not installed/not in PATH (BLOCKED) | Build terminal |
+| 2026-11-01 00:41 IST | Task 03 | Win11 x64 / i7-1255U | `vcvars64.bat && cl.exe` | 0 | Visual Studio 2026 v18.11.3, MSVC 19.51.36260 x64 verified | Environment audit |
+| 2026-11-01 00:41 IST | Task 03 | Win11 x64 / i7-1255U | `cmake.exe --version` | 0 | CMake 4.5.0-rc2 verified | Environment audit |
+| 2026-11-01 00:43 IST | Task 03 | Win11 x64 / i7-1255U | `cmake -S . -B build -G "Visual Studio 18 2026" -A x64` | 0 | Configured project with MSVC 19.51.36260, SDK 10.0.26100.0, 0 errors, 0 warnings | `build/` |
+| 2026-11-01 00:43 IST | Task 03 | Win11 x64 / i7-1255U | `cmake --build build --config Release` | 0 | Built `uew_core.lib` and `uew_core_tests.exe` cleanly; 0 errors, 0 warnings | `build/Release/` |
+| 2026-11-01 00:43 IST | Task 03 | Win11 x64 / i7-1255U | `ctest --test-dir build -C Release --output-on-failure --verbose` | 0 | 1/1 tests passed: `uew_core_tests` passed (80-element max midpoint error: 0.0195312 C) | CTest log |
+| 2026-11-01 00:43 IST | Task 03 | Win11 x64 / i7-1255U | `build\Release\uew_core_tests.exe` | 0 | PASS: FEM boundary conditions, convergence and validation (0.0195312 C error) | Standalone test |
 
 Rules:
 - Record actual environment and exact command.

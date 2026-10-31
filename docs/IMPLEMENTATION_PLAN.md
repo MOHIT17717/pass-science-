@@ -6,7 +6,7 @@ Execute one task at a time. No task begins without user approval. Task 01 and Ta
 |---|---|---|
 | 01 | Environment audit | Record Windows, CPU/RAM/GPU, Git, C++ compiler, CMake, Node/npm, Antigravity, and packaging prerequisites. Distinguish absent from not found. Preserve actual evidence. |
 | 02 | Requirements, architecture and traceability | Document Electron + React + Three.js + C++17 architecture, ADRs, security boundaries, API/packaging strategy; map all requirements and rubric criteria. Documentation only. |
-| 03 | C++ toolchain, Git baseline and core build skeleton | With approval, install/configure MSVC/CMake only as authorized; initialize Git; establish CMake core/test baseline. Preserve FEM source and tests. |
+| 03 | C++ toolchain, Git baseline and core build skeleton | Initialized Git baseline (commit ebac724); updated CMakeLists.txt for uew_core and tests; verified MSVC 19.51.36260 and CMake 4.5.0-rc2; built uew_core.lib and uew_core_tests.exe cleanly; CTest 100% passed (midpoint error 0.0195312 C). Status: PASSED. |
 | 04 | Frontend/Electron workspace and dependency baseline | Establish React + TypeScript + Vite + Electron workspace, lockfile, scripts, lint/typecheck/build baseline. No engineering features. |
 | 05 | C++ core and API boundary | Separate existing FEM/core from transport; choose and implement versioned local API, JSON DTOs, loopback/authentication and health endpoint. Core remains transport-free. |
 | 06 | Thermal FEM verification and export | Verify equations, BCs, N=10/20/40/80, midpoint interpolation error, analytical comparison, convergence, CSV export and documented assumptions. |
@@ -24,7 +24,7 @@ Execute one task at a time. No task begins without user approval. Task 01 and Ta
 | 18 | Windows packaging, report, demo and submission | Package `Launch.exe`, clean-machine/offline/no-admin validation, source build instructions, AI disclosure, Git history, report <=6 pages, handwritten appendix, demo/walkthrough and final ZIP naming. |
 
 ## Sequencing notes
-- Task 03 is blocked until the C++ compiler and CMake are verified. Node/npm must also be audited before Task 04.
+- Task 03 is complete: MSVC 19.51.36260, CMake 4.5.0-rc2, Git baseline ebac724, and core CTest pass verified. Node.js 22.20.0 and npm 11.11.1 are verified for Task 04.
 - Task 05 must choose the local HTTP transport and authentication design through a recorded ADR before exposing endpoints.
 - Task 07 parsers are C++; Three.js receives validated geometry/data.
 - Task 09 is visualization, not CAD editing.
