@@ -12,6 +12,20 @@ The evaluator must be able to extract the submission ZIP and double-click `Launc
 - `Launch.exe` must be the actual entry point expected by the assignment, not a development script or a shortcut requiring Node/npm.
 - electron-builder is the current candidate packager. Its Windows target and exact configuration must be pinned and tested.
 
+### Top-level delivery directory layout
+```text
+CandidateID_Workbench/
+├── Launch.exe                    # Primary application executable (double-click to launch)
+├── resources/
+│   ├── app.asar                  # Packaged Electron main & React production UI
+│   ├── backend/
+│   │   ├── uew_backend.exe       # Unpacked C++17 native backend executable
+│   │   └── *.dll                 # Required MSVC runtime DLLs
+│   └── assets/                   # Provenance, sample STL, synthetic CSV
+├── README.md                     # Evaluator launch & verification guide
+└── docs/                         # Assignment documentation & reports
+```
+
 ## Startup lifecycle
 1. `Launch.exe` starts Electron.
 2. Electron main resolves the backend path from the packaged resource directory.

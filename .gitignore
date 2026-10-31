@@ -1,3 +1,4 @@
+# C++ CMake
 build/
 out/
 *.user
@@ -5,3 +6,12 @@ out/
 .vs/
 .vscode/.cache/
 *.log
+
+# Node & Frontend
+node_modules/
+dist/
+dist-electron/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

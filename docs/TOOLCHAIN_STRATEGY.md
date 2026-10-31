@@ -8,13 +8,15 @@
 - Node.js LTS and npm for frontend/Electron development.
 - Antigravity for agent-assisted development.
 
-The user's audit dated 2026-10-31 found Git installed but did not find a C++ compiler, CMake, or Qt. Qt is no longer part of the approved architecture. Node.js/npm status has not yet been audited and must not be assumed.
+The toolchain audit verified Git 2.46.2, Node.js v22.20.0, npm 11.11.1, MSVC 19.51.36260 x64, and CMake 4.5.0-rc2. Qt is removed and no longer needed.
 
 ## Frontend
-- React + TypeScript.
-- Vite for frontend development/build.
-- Electron for desktop shell.
-- Three.js; React Three Fiber is an optional integration layer, not a requirement to use both.
+- Host environment: Node.js 22.20.0 and npm 11.11.1 (build and dev scripts).
+- Desktop runtime: Electron 45.2.1 (Chromium 156.0.8078.75, Embedded Node.js 24.22.1).
+- React 18.3.1 + TypeScript 5.6.3.
+- Vite 5.4.10 for frontend development/build.
+- Three.js 0.170.0 for 3D visualization.
+- Process lifecycle: `SHUTDOWN` stdin protocol planned for graceful exit (unverified until C++ backend implements it; Windows `taskkill /T /F` fallback).
 - Select exactly one chart library (Apache ECharts or Recharts) before implementation and record rationale.
 - Use npm with a committed lockfile and pinned compatible versions.
 - Avoid unnecessary UI libraries and runtime CDN dependencies.

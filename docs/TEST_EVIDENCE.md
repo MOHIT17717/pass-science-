@@ -27,6 +27,18 @@ Append one entry per verification run.
 | 2026-11-01 00:43 IST | Task 03 | Win11 x64 / i7-1255U | `cmake --build build --config Release` | 0 | Built `uew_core.lib` and `uew_core_tests.exe` cleanly; 0 errors, 0 warnings | `build/Release/` |
 | 2026-11-01 00:43 IST | Task 03 | Win11 x64 / i7-1255U | `ctest --test-dir build -C Release --output-on-failure --verbose` | 0 | 1/1 tests passed: `uew_core_tests` passed (80-element max midpoint error: 0.0195312 C) | CTest log |
 | 2026-11-01 00:43 IST | Task 03 | Win11 x64 / i7-1255U | `build\Release\uew_core_tests.exe` | 0 | PASS: FEM boundary conditions, convergence and validation (0.0195312 C error) | Standalone test |
+| 2026-11-01 00:48 IST | Task 03 | Win11 x64 / i7-1255U | `git commit` | 0 | Created Task 03 completion commit `a59e721` | Git log `a59e721` |
+| 2026-11-01 01:05 IST | Task 04 | Win11 x64 / i7-1255U | `npm install` | 0 | Installed 146 dependencies in 26s, generated lockfile | `package-lock.json` |
+| 2026-11-01 01:06 IST | Task 04 | Win11 x64 / i7-1255U | `node node_modules/electron/install.js` | 0 | Downloaded prebuilt Electron 45.2.1 x64 binary | `node_modules/electron/dist/electron.exe` |
+| 2026-11-01 01:18 IST | Task 04 | Win11 x64 / i7-1255U | `npm run build:electron` | 0 | Compiled main and preload TypeScript (`tsc -p electron/tsconfig.json`), 0 errors | `dist/electron/` |
+| 2026-11-01 01:18 IST | Task 04 | Win11 x64 / i7-1255U | `npm run build:renderer` | 0 | Built React production bundle (`vite build --config frontend/vite.config.ts`) in 2.04s, 0 errors | `dist/renderer/` |
+| 2026-11-01 01:18 IST | Task 04 | Win11 x64 / i7-1255U | `npm run typecheck` | 0 | Typecheck passed for both renderer and electron, 0 errors | TypeScript output |
+| 2026-11-01 01:20 IST | Task 04 | Win11 x64 / i7-1255U | `node scripts/run-electron.js . --test-autoclose=3000` | 0 | Window opened, WebGL initialized, React shell mounted, preload API verified, window auto-closed cleanly | Console log output |
+| 2026-11-01 01:20 IST | Task 04 | Win11 x64 / i7-1255U | `Get-FileHash SHA256 (thermal files & test)` | 0 | All 4 FEM files verified byte-for-byte identical to baseline | File hashes |
+| 2026-11-01 01:28 IST | Task 04 | Win11 x64 / i7-1255U | `npm run build` | 0 | Built React bundle (Vite) and Electron (tsc) in 2.14s, 0 errors | `dist/` |
+| 2026-11-01 01:28 IST | Task 04 | Win11 x64 / i7-1255U | `npm run typecheck` | 0 | Typecheck passed for both renderer and electron, 0 errors | TypeScript output |
+| 2026-11-01 01:29 IST | Task 04 | Win11 x64 / i7-1255U | `ctest.exe --test-dir build -C Release --output-on-failure --verbose` | 0 | 1/1 CTest passed (100% pass): `uew_core_tests` (0.0195312 C error) | CTest output |
+| 2026-11-01 01:29 IST | Task 04 | Win11 x64 / i7-1255U | `build\Release\uew_core_tests.exe` | 0 | PASS: FEM boundary conditions, convergence and validation (0.0195312 C error) | Standalone test |
 
 Rules:
 - Record actual environment and exact command.

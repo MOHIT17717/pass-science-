@@ -1,0 +1,36 @@
+{
+  "name": "unified-engineering-workbench",
+  "version": "0.1.0",
+  "description": "Unified Engineering Workbench desktop application with Electron, React, Three.js and C++17 backend",
+  "private": true,
+  "main": "dist/electron/main/index.js",
+  "scripts": {
+    "build:renderer": "vite build --config frontend/vite.config.ts",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "build": "npm run build:renderer && npm run build:electron",
+    "typecheck:renderer": "tsc -p frontend/tsconfig.json --noEmit",
+    "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",
+    "typecheck": "npm run typecheck:renderer && npm run typecheck:electron",
+    "dev:renderer": "vite --config frontend/vite.config.ts",
+    "dev:electron": "wait-on tcp:127.0.0.1:5173 && node scripts/run-electron.js .",
+    "dev": "concurrently -k -s first \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "start": "node scripts/run-electron.js ."
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.8.4",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@types/three": "0.170.0",
+    "@vitejs/plugin-react": "4.3.3",
+    "concurrently": "9.0.1",
+    "electron": "45.2.1",
+    "typescript": "5.6.3",
+    "vite": "5.4.10",
+    "wait-on": "8.0.1"
+  }
+}

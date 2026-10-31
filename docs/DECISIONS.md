@@ -35,3 +35,14 @@ Use electron-builder as the candidate Windows packager, subject to version pinni
 ## ADR-009 — Preserve verified FEM implementation
 **Status:** Accepted.  
 Existing FEM files and tests are preserved byte-for-byte until a separately approved task requires a change. Existing Qt UI files are legacy; do not compile or delete them without explicit approval.
+
+## ADR-010 — Electron version selection: Electron 45.2.1
+**Status:** Accepted.  
+**Decision:** Standardize on Electron 45.2.1 for the Windows desktop shell.  
+**Runtime Specifications:**
+- **Electron Version**: `45.2.1`
+- **Embedded Chromium**: `156.0.8078.75` (delivers modern WebGL 2.0 context acceleration for Three.js on Intel Iris Xe Graphics)
+- **Embedded Node.js**: `24.22.1` (bundled internally within Electron's runtime binary)
+- **Host Development Environment**: Node.js `22.20.0` and npm `11.11.1` (strictly distinguished from Electron's embedded Node.js; used for build, TypeScript checking, and dev orchestration)
+**Process Lifecycle Note:**
+- The `SHUTDOWN` stdin notification protocol between Electron Main and the C++ backend is established as a design contract but remains **unverified** until the C++ backend implements stdin monitoring and signal response in Task 05. Fallback forceful process tree termination (`taskkill /pid ${pid} /T /F`) protects against hangs on Windows.

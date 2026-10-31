@@ -40,13 +40,17 @@ Windows 11 x64 — Launch.exe
 - Owns the desktop window and application lifecycle.
 - Resolves the packaged backend executable path without relying on the current working directory.
 - Starts the C++ backend as a child process, captures stdout/stderr, waits for a readiness signal, and terminates it gracefully on application exit.
+- Generates and holds the private session authentication token; the token is never exposed to the renderer or preload context.
 - Handles unexpected backend exit and presents an actionable error.
+- Enforces IPC sender validation (`event.senderFrame === mainWindow.webContents.mainFrame`).
+- In development, ensures Vite dev server readiness before launching the Electron window.
 - Does not perform FEM, parsing, or benchmark calculations.
 
 ### Preload
-- Uses `contextBridge` to expose a small, typed, allow-listed API.
+- Uses `contextBridge` to expose a small, typed, allow-listed API (`window.workbenchAPI`).
 - Does not expose raw Node.js, filesystem, process, shell, or IPC primitives.
 - Validates message shape and restricts operations.
+- Does not hold or proxy backend authentication credentials.
 
 ### React renderer
 - Owns presentation, navigation, user input, client-side form feedback, and visualization.
@@ -58,6 +62,11 @@ Windows 11 x64 — Launch.exe
 ### C++ API/transport adapter
 - Exposes a documented versioned local API.
 - Validates payloads, sizes, ranges, units, and request IDs.
+- Maps transport DTOs to core types and maps core results to response DTOs.
+- Is separate from the engineering core.
+- Binds only to loopback (`127.0.0.1` or `::1`), never all interfaces.
+- Uses a random per-launch token provided by Electron main at process startup and rejects unauthenticated requests.
+- Does not trust frontend validation.
 - Maps transport DTOs to core types and maps core results to response DTOs.
 - Is separate from the engineering core.
 - Binds only to loopback (`127.0.0.1` or `::1`), never all interfaces.
@@ -160,3 +169,28 @@ Exact routes and transport library must be selected in a recorded decision befor
 
 ## 8. Architecture exclusions
 No full CAD solid modeller, native ANSYS format support, mesh-to-result registration, physical board wiring, firmware deployment, or real FPGA programming. The embedded task is a labelled safe design plus C++ mock adapters.
+
+## 9. Electron security & toolchain policies
+- **Runtime Environment Specifications**:
+  - **Electron Version**: `45.2.1`
+  - **Embedded Chromium**: `156.0.8078.75`
+  - **Embedded Node.js**: `24.22.1` (bundled internally within the Electron runtime binary)
+  - **Host Node.js**: `22.20.0` with npm `11.11.1` (used exclusively for local toolchain compilation, Vite bundling, and dev scripts; strictly distinguished from embedded Node.js)
+- **Process Lifecycle & Shutdown Protocol**:
+  - Windows process termination combines a graceful `stdin` shutdown notification with a fallback to `taskkill /pid ${pid} /T /F`.
+  - The `SHUTDOWN` stdin protocol is documented as the planned graceful shutdown contract and remains **unverified** until the C++ backend implements its stdin reader and signal handling in Task 05.
+- **Content Security Policy (CSP)**:
+  - Development CSP permits local Vite dev server and HMR WebSocket (`http://127.0.0.1:5173`, `ws://127.0.0.1:5173`).
+  - Production CSP strictly forbids wildcard localhost access (`connect-src 'self' http://127.0.0.1:${backendPort}`); only the explicit dynamically assigned loopback port of the C++ backend is permitted.
+- **Authentication Isolation**:
+  - The per-launch 32-byte cryptographic token is held exclusively in the Electron Main process and passed to the backend executable.
+  - The React renderer never receives, stores, or handles the authentication token.
+- **IPC Sender Frame Validation**:
+  - All `ipcMain.handle` invocations strictly verify `event.senderFrame === mainWindow.webContents.mainFrame`.
+  - Input parameters are validated for type, range, and finite numeric values.
+- **TypeScript Isolation**:
+  - `electron/tsconfig.json` compiles Electron Main and Preload using Node types, outputting to `dist/electron/`.
+  - `frontend/tsconfig.json` compiles the React renderer using DOM types and `noEmit: true`, leaving bundling to Vite (`dist/renderer/`).
+  - Zero cross-contamination between Node and DOM types.
+- **Packaging Constraint**:
+  - The final distribution must produce a top-level `Launch.exe` with bundled Electron runtime and resources, requiring zero developer tools or runtime dependencies on a clean Windows 11 x64 machine.
