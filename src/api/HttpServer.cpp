@@ -24,6 +24,23 @@ std::string HttpRequest::get_header(const std::string& name) const {
     return "";
 }
 
+std::string HttpRequest::get_query_param(const std::string& name) const {
+    if (query.empty()) return "";
+    std::istringstream qs(query);
+    std::string pair;
+    while (std::getline(qs, pair, '&')) {
+        size_t eq = pair.find('=');
+        if (eq != std::string::npos) {
+            std::string k = pair.substr(0, eq);
+            std::string v = pair.substr(eq + 1);
+            if (k == name) return v;
+        } else if (pair == name) {
+            return "true";
+        }
+    }
+    return "";
+}
+
 HttpResponse HttpResponse::json(int code, const std::string& status, const Json& json_body) {
     HttpResponse resp;
     resp.status_code = code;
@@ -373,6 +390,7 @@ void HttpServer::handle_client(socket_t client_sock) {
     // Parse query params out of path
     size_t query_pos = req.path.find('?');
     if (query_pos != std::string::npos) {
+        req.query = req.path.substr(query_pos + 1);
         req.path = req.path.substr(0, query_pos);
     }
 

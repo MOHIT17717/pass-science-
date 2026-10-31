@@ -17,6 +17,8 @@ add_library(uew_core
     src/core/thermal/FEMSolver.cpp
     src/core/thermal/FEMSolver.h
     src/core/thermal/ThermalModels.h
+    src/core/thermal/ThermalVerification.h
+    src/core/thermal/ThermalVerification.cpp
 )
 
 target_include_directories(uew_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -36,6 +38,12 @@ if(BUILD_TESTING AND UEW_BUILD_TESTS)
     )
     target_link_libraries(uew_core_tests PRIVATE uew_core)
     add_test(NAME uew_core_tests COMMAND uew_core_tests)
+
+    add_executable(uew_thermal_tests
+        tests/test_thermal_verification.cpp
+    )
+    target_link_libraries(uew_thermal_tests PRIVATE uew_core)
+    add_test(NAME uew_thermal_tests COMMAND uew_thermal_tests)
 endif()
 
 # ---------------------------------------------------------------------------

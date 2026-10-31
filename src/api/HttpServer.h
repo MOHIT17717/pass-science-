@@ -33,10 +33,12 @@ namespace uew::api {
 struct HttpRequest {
     std::string method;
     std::string path;
+    std::string query;
     std::map<std::string, std::string> headers;
     std::string body;
 
     std::string get_header(const std::string& name) const;
+    std::string get_query_param(const std::string& name) const;
 };
 
 struct HttpResponse {

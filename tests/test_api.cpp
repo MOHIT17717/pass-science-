@@ -193,6 +193,213 @@ void test_api_lifecycle_and_validation() {
     TEST_ASSERT(health_json["units"]["thermal_conductivity"].as_string() == "W/(m*K)", "Explicit units conductivity");
     std::cout << "PASS: Valid token returned 200 OK with explicit physical units." << std::endl;
 
+    // Test D1: Thermal Solve Endpoint (POST valid elements=80) -> Expect 200 OK with accurate solution
+    std::string post_solve_body;
+    {
+        std::string body = "{\"elements\": 80}";
+        std::ostringstream req;
+        req << "POST /api/v1/thermal/solve HTTP/1.1\r\n"
+            << "Host: 127.0.0.1:" << port << "\r\n"
+            << "X-Session-Token: " << test_token << "\r\n"
+            << "Content-Type: application/json\r\n"
+            << "Content-Length: " << body.size() << "\r\n"
+            << "Connection: close\r\n\r\n"
+            << body;
+        std::string resp = http_raw_exchange(port, req.str());
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Thermal solve POST returns 200 OK");
+        size_t b_pos = resp.find("\r\n\r\n");
+        TEST_ASSERT(b_pos != std::string::npos, "Delimiter found");
+        post_solve_body = resp.substr(b_pos + 4);
+        Json j = Json::parse(post_solve_body);
+        TEST_ASSERT(j["status"].as_string() == "ok", "Thermal status ok");
+        TEST_ASSERT(j["mesh"]["elements"].as_int() == 80, "Elements == 80");
+        TEST_ASSERT(j["mesh"]["node_count"].as_int() == 81, "Node count == 81");
+        TEST_ASSERT(j["mesh"]["midpoints"].as_array().size() == 80, "Midpoint array size == 80");
+        double mid_err = j["mesh"]["max_midpoint_error_C"].as_number();
+        TEST_ASSERT(std::abs(mid_err - 0.01953125) < 1e-7, "Thermal 80-element midpoint error == 0.01953125 C");
+        std::cout << "PASS: Thermal solve API (POST) verified with 80-element mesh (midpoint error: " << mid_err << " C)." << std::endl;
+    }
+
+    // Test D2: Thermal Solve Endpoint (GET query param elements=80) -> Consistent with POST
+    {
+        std::string resp = http_get(port, "/api/v1/thermal/solve?elements=80", test_token);
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Thermal solve GET returns 200 OK");
+        size_t b_pos = resp.find("\r\n\r\n");
+        TEST_ASSERT(b_pos != std::string::npos, "Delimiter found");
+        std::string get_solve_body = resp.substr(b_pos + 4);
+        Json j_get = Json::parse(get_solve_body);
+        Json j_post = Json::parse(post_solve_body);
+        TEST_ASSERT(j_get["mesh"]["elements"].as_int() == j_post["mesh"]["elements"].as_int(), "GET and POST equivalent elements");
+        TEST_ASSERT(std::abs(j_get["mesh"]["max_midpoint_error_C"].as_number() - j_post["mesh"]["max_midpoint_error_C"].as_number()) < 1e-12,
+            "GET and POST equivalent midpoint error");
+        std::cout << "PASS: Thermal solve GET and POST consistency verified." << std::endl;
+    }
+
+    // Test D3: Thermal Solve Endpoint (invalid elements=15) -> Expect 400 Bad Request
+    {
+        std::string body = "{\"elements\": 15}";
+        std::ostringstream req;
+        req << "POST /api/v1/thermal/solve HTTP/1.1\r\n"
+            << "Host: 127.0.0.1:" << port << "\r\n"
+            << "X-Session-Token: " << test_token << "\r\n"
+            << "Content-Type: application/json\r\n"
+            << "Content-Length: " << body.size() << "\r\n"
+            << "Connection: close\r\n\r\n"
+            << body;
+        std::string resp = http_raw_exchange(port, req.str());
+        TEST_ASSERT(resp.find("400 Bad Request") != std::string::npos, "Invalid elements returns 400 Bad Request");
+        TEST_ASSERT(resp.find("Allowed mesh counts are 10, 20, 40, and 80") != std::string::npos,
+            "400 Bad Request has actionable details");
+        std::cout << "PASS: Thermal solve API rejected invalid mesh elements=15 with 400 Bad Request." << std::endl;
+    }
+
+    // Test D4: Thermal Solve Endpoint (malformed JSON) -> Expect 400 Bad Request
+    {
+        std::string body = "{ bad json ";
+        std::ostringstream req;
+        req << "POST /api/v1/thermal/solve HTTP/1.1\r\n"
+            << "Host: 127.0.0.1:" << port << "\r\n"
+            << "X-Session-Token: " << test_token << "\r\n"
+            << "Content-Type: application/json\r\n"
+            << "Content-Length: " << body.size() << "\r\n"
+            << "Connection: close\r\n\r\n"
+            << body;
+        std::string resp = http_raw_exchange(port, req.str());
+        TEST_ASSERT(resp.find("400 Bad Request") != std::string::npos, "Malformed JSON returns 400 Bad Request");
+        std::cout << "PASS: Thermal solve API rejected malformed JSON with 400 Bad Request." << std::endl;
+    }
+
+    // Test D5: Thermal Solve Endpoint (non-numeric elements) -> Expect 400 Bad Request
+    {
+        std::string body = "{\"elements\": \"eighty\"}";
+        std::ostringstream req;
+        req << "POST /api/v1/thermal/solve HTTP/1.1\r\n"
+            << "Host: 127.0.0.1:" << port << "\r\n"
+            << "X-Session-Token: " << test_token << "\r\n"
+            << "Content-Type: application/json\r\n"
+            << "Content-Length: " << body.size() << "\r\n"
+            << "Connection: close\r\n\r\n"
+            << body;
+        std::string resp = http_raw_exchange(port, req.str());
+        TEST_ASSERT(resp.find("400 Bad Request") != std::string::npos, "Non-integer elements returns 400 Bad Request");
+        std::cout << "PASS: Thermal solve API rejected non-integer elements with 400 Bad Request." << std::endl;
+    }
+
+    // Test D6: Thermal Export Midpoint CSV (GET type=midpoint) -> Expect 200 OK, 80 midpoint records
+    std::string get_mid_csv;
+    {
+        std::string resp = http_get(port, "/api/v1/thermal/export?elements=80&type=midpoint", test_token);
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Thermal export GET returns 200 OK");
+        TEST_ASSERT(resp.find("Content-Type: text/csv; charset=utf-8") != std::string::npos, "Content-Type text/csv");
+        TEST_ASSERT(resp.find("Content-Disposition: attachment; filename=\"thermal_mesh_80_midpoint.csv\"") != std::string::npos,
+            "Content-Disposition attachment");
+        size_t b_pos = resp.find("\r\n\r\n");
+        TEST_ASSERT(b_pos != std::string::npos, "Delimiter found");
+        get_mid_csv = resp.substr(b_pos + 4);
+        TEST_ASSERT(get_mid_csv.find("element_id,midpoint_position_m,interpolated_fem_temperature_C,analytical_temperature_C,midpoint_error_C") != std::string::npos,
+            "Midpoint CSV contains exact columns");
+        TEST_ASSERT(get_mid_csv.find("# Maximum Midpoint Error: 0.01953125 degC") != std::string::npos,
+            "Midpoint CSV contains 0.01953125 degC metadata");
+        std::istringstream stream(get_mid_csv);
+        std::string line;
+        int count = 0;
+        while (std::getline(stream, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty() || line[0] == '#' || line.rfind("element_id", 0) == 0) continue;
+            ++count;
+            TEST_ASSERT(line.find("0.01953125") != std::string::npos, "Every midpoint row has error 0.01953125");
+        }
+        TEST_ASSERT(count == 80, "Midpoint CSV contains exactly 80 records for N=80");
+        std::cout << "PASS: Thermal export midpoint CSV (GET) verified (80 midpoint rows, error=0.01953125 C)." << std::endl;
+    }
+
+    // Test D7: Thermal Export Midpoint CSV (POST type=midpoint) -> Consistent with GET
+    {
+        std::string body = "{\"elements\": 80, \"type\": \"midpoint\"}";
+        std::ostringstream req;
+        req << "POST /api/v1/thermal/export HTTP/1.1\r\n"
+            << "Host: 127.0.0.1:" << port << "\r\n"
+            << "X-Session-Token: " << test_token << "\r\n"
+            << "Content-Type: application/json\r\n"
+            << "Content-Length: " << body.size() << "\r\n"
+            << "Connection: close\r\n\r\n"
+            << body;
+        std::string resp = http_raw_exchange(port, req.str());
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Thermal export POST returns 200 OK");
+        size_t b_pos = resp.find("\r\n\r\n");
+        TEST_ASSERT(b_pos != std::string::npos, "Delimiter found");
+        std::string post_mid_csv = resp.substr(b_pos + 4);
+        TEST_ASSERT(post_mid_csv == get_mid_csv, "GET and POST produce identical CSV body");
+        std::cout << "PASS: Thermal export CSV GET and POST consistency verified." << std::endl;
+    }
+
+    // Test D8: Thermal Export Nodal CSV (GET type=nodal) -> 81 node records
+    {
+        std::string resp = http_get(port, "/api/v1/thermal/export?elements=80&type=nodal", test_token);
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Thermal export nodal returns 200 OK");
+        size_t b_pos = resp.find("\r\n\r\n");
+        TEST_ASSERT(b_pos != std::string::npos, "Delimiter found");
+        std::string nodal_csv = resp.substr(b_pos + 4);
+        TEST_ASSERT(nodal_csv.find("node_id,position_m,fem_temperature_C,analytical_temperature_C,error_C") != std::string::npos,
+            "Nodal CSV contains exact columns");
+        std::istringstream stream(nodal_csv);
+        std::string line;
+        int count = 0;
+        while (std::getline(stream, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty() || line[0] == '#' || line.rfind("node_id", 0) == 0) continue;
+            ++count;
+        }
+        TEST_ASSERT(count == 81, "Nodal CSV contains exactly 81 records for N=80");
+        std::cout << "PASS: Thermal export nodal CSV verified with 81 rows." << std::endl;
+    }
+
+    // Test D9: Thermal Export Combined CSV (GET type=combined) -> 161 records (81 nodes + 80 midpoints)
+    {
+        std::string resp = http_get(port, "/api/v1/thermal/export?elements=80&type=combined", test_token);
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Thermal export combined returns 200 OK");
+        size_t b_pos = resp.find("\r\n\r\n");
+        TEST_ASSERT(b_pos != std::string::npos, "Delimiter found");
+        std::string comb_csv = resp.substr(b_pos + 4);
+        TEST_ASSERT(comb_csv.find("record_type,index,position_m,fem_temperature_C,analytical_temperature_C,error_C") != std::string::npos,
+            "Combined CSV contains record_type column");
+        std::istringstream stream(comb_csv);
+        std::string line;
+        int node_rows = 0, mid_rows = 0;
+        while (std::getline(stream, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty() || line[0] == '#') continue;
+            if (line.rfind("node,", 0) == 0) ++node_rows;
+            if (line.rfind("midpoint,", 0) == 0) ++mid_rows;
+        }
+        TEST_ASSERT(node_rows == 81, "Combined CSV has 81 node records");
+        TEST_ASSERT(mid_rows == 80, "Combined CSV has 80 midpoint records");
+        std::cout << "PASS: Thermal export combined CSV verified with 161 total records (81 nodes + 80 midpoints)." << std::endl;
+    }
+
+    // Test D10: Thermal Export Invalid Elements (elements=15) -> Expect 400 Bad Request
+    {
+        std::string resp = http_get(port, "/api/v1/thermal/export?elements=15", test_token);
+        TEST_ASSERT(resp.find("400 Bad Request") != std::string::npos, "Invalid elements returns 400 Bad Request");
+        std::cout << "PASS: Thermal export rejected invalid elements=15 with 400 Bad Request." << std::endl;
+    }
+
+    // Test D11: Thermal Export Invalid Type (type=invalid) -> Expect 400 Bad Request
+    {
+        std::string resp = http_get(port, "/api/v1/thermal/export?elements=80&type=invalid_type", test_token);
+        TEST_ASSERT(resp.find("400 Bad Request") != std::string::npos, "Invalid type returns 400 Bad Request");
+        std::cout << "PASS: Thermal export rejected invalid type with 400 Bad Request." << std::endl;
+    }
+
+    // Test D12: Unauthenticated Thermal Endpoints -> Expect 401 Unauthorized
+    {
+        std::string resp1 = http_get(port, "/api/v1/thermal/solve?elements=80", "");
+        TEST_ASSERT(resp1.find("401 Unauthorized") != std::string::npos, "Unauthenticated solve returns 401");
+        std::string resp2 = http_get(port, "/api/v1/thermal/export?elements=80", "");
+        TEST_ASSERT(resp2.find("401 Unauthorized") != std::string::npos, "Unauthenticated export returns 401");
+        std::cout << "PASS: Unauthenticated requests to thermal endpoints strictly rejected with 401 Unauthorized." << std::endl;
+    }
+
     // Test E: Invalid Request Line (only 2 tokens) -> Expect 400 Bad Request
     std::string resp_bad_line = http_raw_exchange(port, "GET /api/v1/health\r\nHost: 127.0.0.1\r\n\r\n");
     TEST_ASSERT(resp_bad_line.find("400 Bad Request") != std::string::npos, "Malformed request line returns 400");
