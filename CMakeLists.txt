@@ -37,3 +37,59 @@ if(BUILD_TESTING AND UEW_BUILD_TESTS)
     target_link_libraries(uew_core_tests PRIVATE uew_core)
     add_test(NAME uew_core_tests COMMAND uew_core_tests)
 endif()
+
+# ---------------------------------------------------------------------------
+# API Transport Adapter library (Loopback HTTP & JSON DTOs)
+# ---------------------------------------------------------------------------
+add_library(uew_api
+    src/api/Json.h
+    src/api/Json.cpp
+    src/api/HttpServer.h
+    src/api/HttpServer.cpp
+    src/api/ApiRouter.h
+    src/api/ApiRouter.cpp
+)
+
+target_include_directories(uew_api PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(uew_api PUBLIC uew_core)
+
+if(WIN32)
+    target_link_libraries(uew_api PUBLIC ws2_32)
+endif()
+
+if(MSVC)
+    target_compile_options(uew_api PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(uew_api PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# ---------------------------------------------------------------------------
+# Standalone Backend Executable
+# ---------------------------------------------------------------------------
+add_executable(uew_backend
+    src/main_backend.cpp
+)
+
+target_link_libraries(uew_backend PRIVATE uew_api uew_core)
+
+if(WIN32)
+    target_link_libraries(uew_backend PRIVATE ws2_32)
+endif()
+
+if(MSVC)
+    target_compile_options(uew_backend PRIVATE /W4 /permissive-)
+endif()
+
+# ---------------------------------------------------------------------------
+# API & Integration test harness
+# ---------------------------------------------------------------------------
+if(BUILD_TESTING AND UEW_BUILD_TESTS)
+    add_executable(uew_api_tests
+        tests/test_api.cpp
+    )
+    target_link_libraries(uew_api_tests PRIVATE uew_api uew_core)
+    if(WIN32)
+        target_link_libraries(uew_api_tests PRIVATE ws2_32)
+    endif()
+    add_test(NAME uew_api_tests COMMAND uew_api_tests)
+endif()

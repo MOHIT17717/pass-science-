@@ -1,6 +1,8 @@
 import { ChildProcess, spawn, exec } from 'child_process';
 import crypto from 'crypto';
 import path from 'path';
+import fs from 'fs';
+import http from 'http';
 
 export interface BackendProcessInfo {
   online: boolean;
@@ -11,7 +13,11 @@ export interface BackendProcessInfo {
 
 /**
  * Manages the lifecycle of the C++ backend process.
- * The authentication token is held exclusively in this module and never exposed to the renderer.
+ * Security design:
+ * 1. The session authentication token is NEVER passed via command-line arguments.
+ * 2. The token is transmitted exclusively over child process anonymous stdin pipe during startup handshake.
+ * 3. The token is held exclusively in this module and never exposed to the renderer or logged.
+ * 4. Dynamic loopback port assignment (port 0) eliminates port race conditions.
  */
 export class BackendManager {
   private process: ChildProcess | null = null;
@@ -20,8 +26,7 @@ export class BackendManager {
   private isOnline: boolean = false;
 
   constructor() {
-    // Cryptographically secure token generated exclusively for this session.
-    // Main process uses this token when proxying requests; renderer never sees it.
+    // 32-byte cryptographically secure random token generated exclusively for this session.
     this.authToken = crypto.randomBytes(32).toString('hex');
   }
 
@@ -49,28 +54,184 @@ export class BackendManager {
    * Resolves the C++ backend binary location for development vs packaged environments.
    */
   public getBinaryPath(): string {
-    if (process.env.NODE_ENV === 'development') {
-      // Points to CMake build output in dev
-      return path.resolve(__dirname, '../../../build/Release/uew_backend.exe');
+    const candidates = [
+      path.resolve(__dirname, '../../../build/Release/uew_backend.exe'),
+      path.resolve(process.cwd(), 'build/Release/uew_backend.exe'),
+      path.resolve(process.resourcesPath ?? '', 'backend', 'uew_backend.exe')
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
     }
-    // In packaged app, bundled under resources/backend/
-    return path.resolve(process.resourcesPath, 'backend', 'uew_backend.exe');
+    return candidates[0];
   }
 
   /**
-   * Starts the C++ backend child process and waits for port readiness.
+   * Starts the C++ backend child process using dynamic port allocation and secure stdin token handshake.
    */
-  public async start(): Promise<BackendProcessInfo> {
-    // In Task 04 baseline, we establish port and readiness contract.
-    // In Task 05, this spawns the actual binary and verifies loopback socket binding.
-    this.port = 18080;
-    this.isOnline = true;
-    return this.getStatus();
+  public async start(requestedPort: number = 0): Promise<BackendProcessInfo> {
+    const binaryPath = this.getBinaryPath();
+    if (!fs.existsSync(binaryPath)) {
+      console.warn(`[BACKEND MANAGER] Binary not found at ${binaryPath}. Running in offline mock mode.`);
+      this.port = null;
+      this.isOnline = false;
+      return this.getStatus();
+    }
+
+    return new Promise((resolve) => {
+      console.log(`[BACKEND MANAGER] Spawning backend from: ${binaryPath}`);
+      // Security: Only pass --port. Token is NEVER passed in command-line arguments.
+      const args = ['--port', requestedPort.toString()];
+      const proc = spawn(binaryPath, args, {
+        stdio: ['pipe', 'pipe', 'inherit']
+      });
+
+      this.process = proc;
+      let resolved = false;
+      let tokenHandshakeComplete = false;
+
+      proc.stdout?.on('data', (chunk: Buffer) => {
+        const text = chunk.toString();
+        process.stdout.write(text);
+
+        // Step 1: Detect bound port message: [BACKEND READY] port=<PORT> pid=<PID>
+        const readyMatch = text.match(/\[BACKEND READY\] port=(\d+) pid=(\d+)/);
+        if (readyMatch) {
+          const boundPort = parseInt(readyMatch[1], 10);
+          if (boundPort > 0 && boundPort <= 65535) {
+            this.port = boundPort;
+            console.log(`[BACKEND MANAGER] Backend bound to dynamic loopback port: ${this.port}`);
+
+            // Step 2: Transmit session token securely via stdin pipe
+            try {
+              if (proc.stdin && proc.stdin.writable) {
+                proc.stdin.write(`INIT_TOKEN ${this.authToken}\n`);
+              }
+            } catch (err: any) {
+              console.error(`[BACKEND MANAGER] Failed to write token to stdin: ${err.message}`);
+            }
+          }
+        }
+
+        // Step 3: Detect token initialization confirmation: [TOKEN READY]
+        if (text.includes('[TOKEN READY]') && !tokenHandshakeComplete) {
+          tokenHandshakeComplete = true;
+          console.log('[BACKEND MANAGER] Token handshake confirmed by backend. Performing health check...');
+
+          if (this.port) {
+            this.verifyHealth(this.port)
+              .then((healthy) => {
+                this.isOnline = healthy;
+                if (!healthy) {
+                  console.error('[BACKEND MANAGER] Health verification returned unhealthy status. Cleaning up process.');
+                  this.stop().finally(() => {
+                    if (!resolved) {
+                      resolved = true;
+                      resolve(this.getStatus());
+                    }
+                  });
+                  return;
+                }
+                if (!resolved) {
+                  resolved = true;
+                  resolve(this.getStatus());
+                }
+              })
+              .catch((err) => {
+                console.error(`[BACKEND MANAGER] Health verification error: ${err.message}`);
+                this.isOnline = false;
+                this.stop().finally(() => {
+                  if (!resolved) {
+                    resolved = true;
+                    resolve(this.getStatus());
+                  }
+                });
+              });
+          }
+        }
+      });
+
+      proc.on('error', (err) => {
+        console.error(`[BACKEND MANAGER] Process error: ${err.message}`);
+        this.isOnline = false;
+        if (!resolved) {
+          resolved = true;
+          resolve(this.getStatus());
+        }
+      });
+
+      proc.on('exit', (code, signal) => {
+        console.log(`[BACKEND MANAGER] Process exited with code ${code}, signal ${signal}`);
+        this.isOnline = false;
+        this.process = null;
+        if (!resolved) {
+          resolved = true;
+          resolve(this.getStatus());
+        }
+      });
+
+      // Watchdog timeout: 5000ms maximum startup allowance
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          console.error('[BACKEND MANAGER] Startup handshake timed out after 5000ms.');
+          this.stop().finally(() => {
+            resolve(this.getStatus());
+          });
+        }
+      }, 5000);
+    });
+  }
+
+  private verifyHealth(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port,
+          path: '/api/v1/health',
+          method: 'GET',
+          headers: {
+            'X-Session-Token': this.authToken
+          },
+          timeout: 2000
+        },
+        (res) => {
+          if (res.statusCode === 200) {
+            let data = '';
+            res.on('data', (d) => (data += d));
+            res.on('end', () => {
+              try {
+                const parsed = JSON.parse(data);
+                console.log(`[BACKEND MANAGER] Health check verified: status=${parsed.status}, core_ready=${parsed.core_ready}`);
+                resolve(true);
+              } catch {
+                resolve(false);
+              }
+            });
+          } else {
+            console.error(`[BACKEND MANAGER] Health check returned HTTP ${res.statusCode}`);
+            resolve(false);
+          }
+        }
+      );
+
+      req.on('error', (err) => {
+        console.error(`[BACKEND MANAGER] Health check network error: ${err.message}`);
+        resolve(false);
+      });
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(false);
+      });
+      req.end();
+    });
   }
 
   /**
    * Gracefully terminates the C++ backend child process with Windows-aware process tree cleanup.
-   * On Windows, ChildProcess.kill('SIGTERM') acts as TerminateProcess and does not clean up child trees.
+   * Protocol: Writes 'SHUTDOWN\n' over stdin, waits up to 2000ms, then enforces taskkill watchdog.
    */
   public async stop(): Promise<void> {
     if (!this.process || this.process.killed) {
@@ -86,8 +247,6 @@ export class BackendManager {
 
     if (process.platform === 'win32') {
       // 1. Attempt graceful stdin notification
-      // Note: The SHUTDOWN stdin protocol is an agreed lifecycle contract but remains unverified
-      // until the C++ backend implements its stdin reader and signal response in Task 05.
       try {
         if (this.process.stdin && this.process.stdin.writable) {
           this.process.stdin.write('SHUTDOWN\n');
@@ -96,13 +255,13 @@ export class BackendManager {
         // Ignore stdin errors if process already exited
       }
 
-      // 2. Wait up to 2000ms for graceful exit, then forceful tree-kill via taskkill
+      // 2. Wait up to 2000ms for graceful exit, then forceful tree-kill via taskkill watchdog
       await new Promise<void>((resolve) => {
         let finished = false;
         const timer = setTimeout(() => {
           if (!finished) {
             finished = true;
-            // Forcefully terminate process and all its child processes (/T /F)
+            // Forcefully terminate process and all child processes (/T /F)
             exec(`taskkill /pid ${pid} /T /F`, () => resolve());
           }
         }, 2000);
@@ -135,5 +294,6 @@ export class BackendManager {
 
     this.process = null;
     this.isOnline = false;
+    this.port = null;
   }
 }
