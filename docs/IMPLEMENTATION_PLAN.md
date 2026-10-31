@@ -1,0 +1,32 @@
+# Implementation plan — exactly 18 tasks
+
+Execute one task at a time. No task begins without user approval. Task 01 and Task 02 may already be completed under the previous architecture; their evidence remains historical and must not be erased. This revision changes the approved architecture and the remaining plan. Reconcile statuses explicitly rather than pretending completed work was rerun.
+
+| Task | Name | Scope and acceptance criteria |
+|---|---|---|
+| 01 | Environment audit | Record Windows, CPU/RAM/GPU, Git, C++ compiler, CMake, Node/npm, Antigravity, and packaging prerequisites. Distinguish absent from not found. Preserve actual evidence. |
+| 02 | Requirements, architecture and traceability | Document Electron + React + Three.js + C++17 architecture, ADRs, security boundaries, API/packaging strategy; map all requirements and rubric criteria. Documentation only. |
+| 03 | C++ toolchain, Git baseline and core build skeleton | With approval, install/configure MSVC/CMake only as authorized; initialize Git; establish CMake core/test baseline. Preserve FEM source and tests. |
+| 04 | Frontend/Electron workspace and dependency baseline | Establish React + TypeScript + Vite + Electron workspace, lockfile, scripts, lint/typecheck/build baseline. No engineering features. |
+| 05 | C++ core and API boundary | Separate existing FEM/core from transport; choose and implement versioned local API, JSON DTOs, loopback/authentication and health endpoint. Core remains transport-free. |
+| 06 | Thermal FEM verification and export | Verify equations, BCs, N=10/20/40/80, midpoint interpolation error, analytical comparison, convergence, CSV export and documented assumptions. |
+| 07 | C++ STL and temperature CSV parsers | Implement strict ASCII STL and exact CSV schema parsing, validation, size limits, errors, fixtures and provenance. |
+| 08 | React workbench shell and API integration | Build navigation, layout, forms, API client, progress/status/error surfaces; verify typed communication with C++ health endpoint. |
+| 09 | Three.js geometry and temperature visualization | Render validated STL triangles and CSV point cloud; rotate/pan/zoom/fit, temperature legend and node inspection; units and synthetic label. |
+| 10 | Thermal results and 2D plots | Display FEM curves, analytical comparison, convergence and exported result metadata; charts only visualize C++ results. |
+| 11 | Background jobs, progress and cancellation | Add C++ job lifecycle, bounded work, progress, cancellation and safe result persistence; UI remains responsive. |
+| 12 | Deterministic workload generator and serial baseline | Fixed-seed cases, positive varied k/q, configurable case count/mesh, serial results and reproducibility tests. |
+| 13 | Bounded parallel worker pool | Parallel solves, worker counts 1/2/up to 4 capped by logical CPU, deterministic order and serial agreement <=1e-8 °C. |
+| 14 | Benchmarking and performance evidence | Warm-up, five repetitions, medians, speedup/efficiency, CPU/RAM/compiler/build flags/workload, overhead analysis and plots. |
+| 15 | Embedded design and C++ mock adapters | MCU, FPGA, JTAG adapter design; electrical table/diagram; simulated discovery/connect/disconnect/telemetry and recoverable timeout. |
+| 16 | C++ manual backpropagation | Single sample, exact initial values, simultaneous update, finite-difference gradient check <=1e-5, 100-step loss history. |
+| 17 | End-to-end integration, regression and usability | Integrate all modules; full automated tests; error/cancel paths; audit C++ owns calculations; update traceability and evidence. |
+| 18 | Windows packaging, report, demo and submission | Package `Launch.exe`, clean-machine/offline/no-admin validation, source build instructions, AI disclosure, Git history, report <=6 pages, handwritten appendix, demo/walkthrough and final ZIP naming. |
+
+## Sequencing notes
+- Task 03 is blocked until the C++ compiler and CMake are verified. Node/npm must also be audited before Task 04.
+- Task 05 must choose the local HTTP transport and authentication design through a recorded ADR before exposing endpoints.
+- Task 07 parsers are C++; Three.js receives validated geometry/data.
+- Task 09 is visualization, not CAD editing.
+- Task 18 packaging is a hard acceptance gate, not an afterthought.
+- Keep the total at exactly 18 tasks. Do not split into extra numbered tasks; subtasks may be checklists within a task.
