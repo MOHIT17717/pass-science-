@@ -51,6 +51,63 @@ export class BackendManager {
   }
 
   /**
+   * Dispatches an authenticated request to the C++ backend on loopback.
+   * Injects the private session token directly.
+   */
+  public dispatchRequest(endpoint: string, method: string = 'GET', body?: string): Promise<{ statusCode: number; data: string }> {
+    return new Promise((resolve, reject) => {
+      if (!this.port || !this.isOnline) {
+        return reject(new Error('Backend process is not running or not ready.'));
+      }
+
+      const postData = body ? Buffer.from(body, 'utf8') : undefined;
+      const headers: Record<string, string | number> = {
+        'X-Session-Token': this.authToken,
+        'Connection': 'close'
+      };
+      if (postData) {
+        headers['Content-Type'] = 'text/plain; charset=utf-8';
+        headers['Content-Length'] = postData.length;
+      }
+
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port: this.port,
+          path: endpoint,
+          method,
+          headers,
+          timeout: 10000
+        },
+        (res) => {
+          let responseData = '';
+          res.setEncoding('utf8');
+          res.on('data', (chunk) => {
+            responseData += chunk;
+          });
+          res.on('end', () => {
+            resolve({ statusCode: res.statusCode ?? 500, data: responseData });
+          });
+        }
+      );
+
+      req.on('error', (err) => {
+        reject(new Error(`Backend connection error: ${err.message}`));
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Backend request timed out.'));
+      });
+
+      if (postData) {
+        req.write(postData);
+      }
+      req.end();
+    });
+  }
+
+  /**
    * Resolves the C++ backend binary location for development vs packaged environments.
    */
   public getBinaryPath(): string {

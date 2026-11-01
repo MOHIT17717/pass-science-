@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { BackendStatus, WorkbenchAPI } from './api';
+import type { BackendStatus, CsvParseResult, FilePayload, StlParseResult, WorkbenchAPI } from './api';
 
 const api: WorkbenchAPI = {
   getBackendStatus: async (): Promise<BackendStatus> => {
@@ -11,6 +11,18 @@ const api: WorkbenchAPI = {
     return () => {
       ipcRenderer.removeListener('backend:status-changed', handler);
     };
+  },
+  parseStl: async (content: string): Promise<StlParseResult> => {
+    return ipcRenderer.invoke('api:parse-stl', content);
+  },
+  parseCsv: async (content: string): Promise<CsvParseResult> => {
+    return ipcRenderer.invoke('api:parse-csv', content);
+  },
+  openFileDialog: async (type: 'stl' | 'csv'): Promise<FilePayload | null> => {
+    return ipcRenderer.invoke('dialog:open-file', type);
+  },
+  loadSample: async (type: 'stl' | 'csv'): Promise<FilePayload> => {
+    return ipcRenderer.invoke('sample:load', type);
   }
 };
 

@@ -12,6 +12,8 @@ for (const arg of rawArgs) {
     env.TEST_AUTOCLOSE = arg.split('=')[1];
   } else if (arg === '--test-autoclose') {
     env.TEST_AUTOCLOSE = '3000';
+  } else if (arg === '--test-verify') {
+    env.TEST_WORKBENCH_VERIFY = '1';
   } else {
     electronArgs.push(arg);
   }

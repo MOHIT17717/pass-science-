@@ -8,11 +8,11 @@ The assignment PDF remains authoritative. This matrix is a project implementatio
 | A: C++ backend separated from presentation | C++ core independent of transport/UI | 03, 04, 05, 17 | CMake target graph, code review, tests |
 | A: Windows x64 standalone `Launch.exe` | Electron packaged shell + bundled C++ backend | 18 | Clean-machine launch logs/video |
 | A: separate CMake source build and one-action IDE run | CMake docs and Antigravity/VS Code config | 03, 18 | Build instructions and run config |
-| B: ASCII STL import and rendering | C++ parser; Three.js renderer | 04, 07, 09 | `data/cad/sample_bracket.stl`, `uew_parser_tests`, `test_api` parse-stl, Three.js renderer (Task 09) |
-| B: exact temperature CSV schema | C++ parser and validated DTO | 07, 09 | `data/ansys/synthetic_temperature_point_cloud.csv`, `uew_parser_tests`, `test_api` parse-csv |
-| B: rotate/pan/zoom/fit | Three.js controls | 09 | Interaction walkthrough |
-| B: coloured point cloud, legend, node inspection | Three.js point rendering + React UI | 09 | Screenshot/demo and test fixture |
-| B: provenance, units, limits, malformed input | Data manifest and C++ validation | 07, 09 | `data/DATA_PROVENANCE.md`, 10 MB caps, binary rejection, duplicate node_id rejection |
+| B: ASCII STL import and rendering | C++ parser; Three.js renderer | 04, 07, 08 | `data/cad/sample_bracket.stl`, `uew_parser_tests`, `test_api` parse-stl, `ThreeViewport.tsx` BufferGeometry |
+| B: exact temperature CSV schema | C++ parser and validated DTO | 07, 08 | `data/ansys/synthetic_temperature_point_cloud.csv`, `uew_parser_tests`, `test_api` parse-csv, `TemperatureWorkspace.tsx` |
+| B: rotate/pan/zoom/fit | Three.js controls | 08 | `ThreeViewport.tsx` OrbitControls, `fitCameraToObject`, `ViewportControls.tsx` presets |
+| B: coloured point cloud, legend, node inspection | Three.js point rendering + React UI | 08 | `ThreeViewport.tsx` spectral colormap, `TemperatureLegend.tsx` vertical bar in °C, raycast node picker |
+| B: provenance, units, limits, malformed input | Data manifest and C++ validation | 07, 08 | `data/DATA_PROVENANCE.md`, synthetic provenance badge, 10 MB caps, binary rejection, duplicate node_id rejection |
 | C: 1D two-node linear thermal FEM | Existing C++ solver, verified against assignment | 06 | Unit tests and equations |
 | C: N=10/20/40/80 and analytical comparison | C++ solver + result series | 06, 10 | CSV, plots, error report |
 | C: midpoint interpolation max error | C++ calculation at element midpoints | 06 | Automated numerical assertion |
