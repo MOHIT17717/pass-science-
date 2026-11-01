@@ -12,6 +12,8 @@
     "typecheck:renderer": "tsc -p frontend/tsconfig.json --noEmit",
     "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",
     "typecheck": "npm run typecheck:renderer && npm run typecheck:electron",
+    "package:win": "node scripts/package-standalone.js",
+    "package": "npm run build && npm run package:win",
     "dev:renderer": "vite --config frontend/vite.config.ts",
     "dev:electron": "wait-on tcp:127.0.0.1:5173 && node scripts/run-electron.js .",
     "dev": "node scripts/dev-launcher.js",

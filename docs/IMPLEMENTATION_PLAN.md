@@ -22,5 +22,5 @@ Execute one task at a time. No task begins without user approval. Task 01 and Ta
 - Task 12 (Phases 1–6B) unified development launcher implemented and verified: one-command `npm run dev` workflow with automated MSVC/CMake toolchain discovery, incremental C++ build, Electron compile, Vite dev server, Electron launch with dynamic port & token handshake, complete child process tree supervision, and guaranteed graceful Ctrl+C and UI window teardown with bounded fallback; updated `README.md` with full architecture, prerequisites, usage, and explicit simulation disclaimers.
 - Task 07 parsers are C++; Three.js receives validated geometry/data.
 - Three.js is visualization, not CAD editing.
-- Task 18 packaging is a hard acceptance gate, not an afterthought.
+- Task 12 — Final integration, standalone packaging and submission is a hard acceptance gate, not an afterthought.
 - Keep the total at exactly 18 tasks. Do not split into extra numbered tasks; subtasks may be checklists within a task.

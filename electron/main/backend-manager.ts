@@ -113,9 +113,9 @@ export class BackendManager {
    */
   public getBinaryPath(): string {
     const candidates = [
+      path.resolve(process.resourcesPath ?? '', 'backend', 'uew_backend.exe'),
       path.resolve(__dirname, '../../../build/Release/uew_backend.exe'),
-      path.resolve(process.cwd(), 'build/Release/uew_backend.exe'),
-      path.resolve(process.resourcesPath ?? '', 'backend', 'uew_backend.exe')
+      path.resolve(process.cwd(), 'build/Release/uew_backend.exe')
     ];
     for (const p of candidates) {
       if (fs.existsSync(p)) {

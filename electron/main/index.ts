@@ -12,7 +12,18 @@ async function saveScreenshot(win: BrowserWindow, name: string): Promise<void> {
   try {
     const img = await win.webContents.capturePage();
     const png = img.toPNG();
-    const screenshotDir = path.resolve(__dirname, '../../../docs/screenshots');
+    const candidates = [
+      path.resolve(__dirname, '../../../docs/screenshots'),
+      path.resolve(process.cwd(), 'docs/screenshots'),
+      path.join(process.resourcesPath ?? '', '../docs/screenshots')
+    ];
+    let screenshotDir = candidates[0];
+    for (const d of candidates) {
+      if (fs.existsSync(d) || fs.existsSync(path.dirname(d))) {
+        screenshotDir = d;
+        break;
+      }
+    }
     if (!fs.existsSync(screenshotDir)) {
       fs.mkdirSync(screenshotDir, { recursive: true });
     }
@@ -39,7 +50,15 @@ async function runWorkbenchVerification(win: BrowserWindow): Promise<boolean> {
 
   // 1. Backend STL Parse verification
   try {
-    const stlFile = path.resolve(__dirname, '../../../data/cad/sample_bracket.stl');
+    const stlCandidates = [
+      path.join(process.resourcesPath ?? '', 'data/cad/sample_bracket.stl'),
+      path.resolve(__dirname, '../../../data/cad/sample_bracket.stl'),
+      path.resolve(process.cwd(), 'data/cad/sample_bracket.stl')
+    ];
+    let stlFile = stlCandidates[0];
+    for (const c of stlCandidates) {
+      if (fs.existsSync(c)) { stlFile = c; break; }
+    }
     const stlContent = await fs.promises.readFile(stlFile, 'utf8');
     const res = await backendManager.dispatchRequest('/api/v1/geometry/parse-stl', 'POST', stlContent);
     const data = JSON.parse(res.data);
@@ -56,7 +75,15 @@ async function runWorkbenchVerification(win: BrowserWindow): Promise<boolean> {
 
   // 2. Backend CSV Parse verification
   try {
-    const csvFile = path.resolve(__dirname, '../../../data/ansys/synthetic_temperature_point_cloud.csv');
+    const csvCandidates = [
+      path.join(process.resourcesPath ?? '', 'data/ansys/synthetic_temperature_point_cloud.csv'),
+      path.resolve(__dirname, '../../../data/ansys/synthetic_temperature_point_cloud.csv'),
+      path.resolve(process.cwd(), 'data/ansys/synthetic_temperature_point_cloud.csv')
+    ];
+    let csvFile = csvCandidates[0];
+    for (const c of csvCandidates) {
+      if (fs.existsSync(c)) { csvFile = c; break; }
+    }
     const csvContent = await fs.promises.readFile(csvFile, 'utf8');
     const res = await backendManager.dispatchRequest('/api/v1/data/parse-csv', 'POST', csvContent);
     const data = JSON.parse(res.data);
@@ -683,21 +710,26 @@ async function createWindow(): Promise<BrowserWindow> {
     mainWindow?.show();
     console.log('[ELECTRON] Window ready-to-show successfully.');
 
-    // Automated verification support: run verification only in dev mode if explicitly requested
-    if (isDev && process.env.TEST_WORKBENCH_VERIFY) {
+    // Automated verification support: run verification in dev mode if explicitly requested, or if explicit packaged test flag passed
+    const runVerify = (isDev && !!process.env.TEST_WORKBENCH_VERIFY) || process.argv.includes('--test-packaged-verify');
+    if (runVerify) {
       const verifySuccess = await runWorkbenchVerification(mainWindow!);
       if (!verifySuccess) {
         process.exitCode = 1;
       }
     }
 
-    // Auto-close after verification window in development mode only
-    if (isDev && process.env.TEST_AUTOCLOSE) {
-      const delay = parseInt(process.env.TEST_AUTOCLOSE, 10) || 3000;
+    // Auto-close after verification window: development mode env var or explicit packaged CLI arg
+    const autocloseArg = process.argv.find(a => a.startsWith('--test-packaged-autoclose'));
+    const autocloseDelay = autocloseArg
+      ? parseInt(autocloseArg.split('=')[1], 10) || 3000
+      : (isDev && process.env.TEST_AUTOCLOSE ? parseInt(process.env.TEST_AUTOCLOSE, 10) || 3000 : 0);
+
+    if (autocloseDelay > 0) {
       setTimeout(() => {
-        console.log('[ELECTRON] Test auto-close delay elapsed; closing window.');
+        console.log('[ELECTRON] Test auto-close delay elapsed; closing window gracefully.');
         mainWindow?.close();
-      }, delay);
+      }, autocloseDelay);
     }
   });
 
@@ -913,9 +945,9 @@ ipcMain.handle('sample:load', async (event, type: 'stl' | 'csv') => {
     : 'data/ansys/synthetic_temperature_point_cloud.csv';
 
   const candidates = [
+    path.join(process.resourcesPath ?? '', relPath),
     path.join(projectRoot, relPath),
-    path.join(process.cwd(), relPath),
-    path.join(process.resourcesPath ?? '', relPath)
+    path.join(process.cwd(), relPath)
   ];
 
   let filePath = '';
