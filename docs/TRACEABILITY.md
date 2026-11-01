@@ -17,10 +17,10 @@ The assignment PDF remains authoritative. This matrix is a project implementatio
 | C: N=10/20/40/80 and analytical comparison | C++ solver + result series | 06, 09 | `ThermalWorkspace.tsx`, `ThermalChart.tsx` 2D plot (continuous analytical vs. FEM segments), CSV exports |
 | C: midpoint interpolation max error | C++ calculation at element midpoints | 06, 09 | Automated numerical assertion, convergence table ($0.01953125^\circ\text{C}$ for N=80), error profile plot |
 | C: assumptions, units, BCs, debugging insight | Report and UI metadata | 06, 09, 18 | Physical parameter card (A=0.0001 m², L=1.0 m, k=10, q=10000), Dirichlet BCs (100 °C, 20 °C), technical report |
-| D: serial and parallel batch solves | C++ deterministic generator and worker pool | 12, 13 | Tests and source |
-| D: 1/2/up to 4 workers and reproducibility | Bounded C++ pool and ordered results | 13 | Comparison tests |
-| D: five repetitions, median, speedup, efficiency | C++ benchmark harness | 14 | CSV and plots |
-| D: hardware/compiler/workload disclosure | Benchmark metadata | 14, 18 | Benchmark report |
+| D: serial and parallel batch solves | C++ deterministic generator and genuine serial baseline vs worker pool | 10 | `src/core/benchmark/ParallelExecutor.cpp`, `uew_benchmark_tests`, `PerformanceWorkspace.tsx` |
+| D: 1/2/up to 4 workers and reproducibility | Bounded C++ pool, deterministic ordering, and <=1e-8 °C agreement | 10 | `uew_benchmark_tests`, `test_api` benchmark routes, numerical verification table |
+| D: five repetitions, median, speedup, efficiency | C++ benchmark harness and SVG speedup/efficiency chart | 10 | `src/core/benchmark/BenchmarkHarness.cpp`, `BenchmarkChart.tsx`, CSV export |
+| D: hardware/compiler/workload disclosure | Dynamic Win32 runtime hardware & build query | 10, 18 | `src/core/benchmark/EnvironmentHelper.cpp`, hardware disclosure card, technical report |
 | E: MCU, FPGA, JTAG design and electrical safety | Diagram/table and C++ simulated adapters | 15 | Diagram, interface table, mock tests |
 | E: recoverable timeout and simulated labels | Mock adapter error handling and React status | 15, 17 | Failure test and UI evidence |
 | F: manual backpropagation | C++ implementation, no autodiff | 16 | Hand calculation and unit tests |

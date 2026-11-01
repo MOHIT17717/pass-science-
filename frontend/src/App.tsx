@@ -5,6 +5,7 @@ import { ViewportControls } from './components/ViewportControls';
 import { GeometryWorkspace } from './features/geometry/GeometryWorkspace';
 import { TemperatureWorkspace } from './features/temperature/TemperatureWorkspace';
 import { ThermalWorkspace } from './features/thermal/ThermalWorkspace';
+import { PerformanceWorkspace } from './features/performance/PerformanceWorkspace';
 import type { BackendStatus } from '../../electron/preload/api';
 import type { StlModelData, GeometryViewOptions } from './types/geometry';
 import type { TemperatureDatasetData, TemperatureViewOptions, InspectedNode } from './types/temperature';
@@ -393,14 +394,12 @@ export const App: React.FC = () => {
           <div style={{ flex: 1, width: '100%', overflowY: 'auto' }}>
             <ThermalWorkspace />
           </div>
+        ) : activeTab === 'performance' ? (
+          <div style={{ flex: 1, width: '100%', overflowY: 'auto' }}>
+            <PerformanceWorkspace />
+          </div>
         ) : (
           <div style={{ padding: '32px', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
-            {activeTab === 'performance' && (
-              <div>
-                <h2>3. Multicore Performance Benchmarking</h2>
-                <p style={{ color: '#aaa' }}>Parallel batch worker pool foundation.</p>
-              </div>
-            )}
             {activeTab === 'hardware' && (
               <div>
                 <h2>4. Embedded System Hardware Integration</h2>

@@ -496,6 +496,45 @@ void test_api_lifecycle_and_validation() {
         std::cout << "PASS: Unauthenticated requests to parsing endpoints strictly rejected with 401 Unauthorized." << std::endl;
     }
 
+    // Test D19: Benchmark Run API (POST /api/v1/benchmark/run) -> Expect 200 OK & Valid Suite
+    {
+        std::string body = "{\"case_count\": 50, \"elements\": 20, \"worker_counts\": [1, 2, 4], \"repetitions\": 3, \"seed\": 42}";
+        std::string resp = http_post(port, "/api/v1/benchmark/run", body, test_token);
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Benchmark run returns 200 OK");
+        TEST_ASSERT(resp.find("\"status\":\"ok\"") != std::string::npos, "Benchmark status ok");
+        TEST_ASSERT(resp.find("\"cpu_model\":") != std::string::npos, "Benchmark contains cpu_model");
+        TEST_ASSERT(resp.find("\"worker_results\":[") != std::string::npos, "Benchmark contains worker_results");
+        TEST_ASSERT(resp.find("\"all_passed\":true") != std::string::npos, "Benchmark all_passed is true");
+        std::cout << "PASS: Benchmark run API verified with 200 OK, multithreading, and numerical agreement." << std::endl;
+    }
+
+    // Test D20: Benchmark Export CSV (POST /api/v1/benchmark/export) -> Expect 200 OK & CSV Content
+    {
+        std::string body = "{\"case_count\": 50, \"elements\": 20, \"worker_counts\": [1, 2], \"repetitions\": 3, \"seed\": 42}";
+        std::string resp = http_post(port, "/api/v1/benchmark/export", body, test_token);
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Benchmark export returns 200 OK");
+        TEST_ASSERT(resp.find("Content-Type: text/csv; charset=utf-8") != std::string::npos, "Content-Type text/csv");
+        TEST_ASSERT(resp.find("# Unified Engineering Workbench - Multicore Benchmark Export") != std::string::npos, "CSV header present");
+        std::cout << "PASS: Benchmark export endpoint verified with 200 OK and CSV body." << std::endl;
+    }
+
+    // Test D21: Benchmark Run rejected on invalid case_count (400 Bad Request)
+    {
+        std::string body = "{\"case_count\": 0, \"elements\": 20}";
+        std::string resp = http_post(port, "/api/v1/benchmark/run", body, test_token);
+        TEST_ASSERT(resp.find("400 Bad Request") != std::string::npos, "case_count=0 returns 400 Bad Request");
+        std::cout << "PASS: Benchmark run API rejected invalid case_count with 400 Bad Request." << std::endl;
+    }
+
+    // Test D22: Unauthenticated Benchmark Endpoints -> Expect 401 Unauthorized
+    {
+        std::string resp1 = http_post(port, "/api/v1/benchmark/run", "{}", "");
+        TEST_ASSERT(resp1.find("401 Unauthorized") != std::string::npos, "Unauthenticated benchmark run returns 401");
+        std::string resp2 = http_post(port, "/api/v1/benchmark/export", "{}", "");
+        TEST_ASSERT(resp2.find("401 Unauthorized") != std::string::npos, "Unauthenticated benchmark export returns 401");
+        std::cout << "PASS: Unauthenticated requests to benchmark endpoints strictly rejected with 401 Unauthorized." << std::endl;
+    }
+
     // Test E: Invalid Request Line (only 2 tokens) -> Expect 400 Bad Request
     std::string resp_bad_line = http_raw_exchange(port, "GET /api/v1/health\r\nHost: 127.0.0.1\r\n\r\n");
     TEST_ASSERT(resp_bad_line.find("400 Bad Request") != std::string::npos, "Malformed request line returns 400");

@@ -2,6 +2,7 @@
 #include "core/thermal/ThermalVerification.h"
 #include "core/parsers/StlParser.h"
 #include "core/parsers/CsvParser.h"
+#include "core/benchmark/BenchmarkHarness.h"
 #include <chrono>
 #include <sstream>
 
@@ -21,6 +22,10 @@ void ApiRouter::register_routes(HttpServer& server) {
     server.set_route("GET", "/api/v1/thermal/export", &ApiRouter::handle_thermal_export);
     server.set_route("POST", "/api/v1/geometry/parse-stl", &ApiRouter::handle_parse_stl);
     server.set_route("POST", "/api/v1/data/parse-csv", &ApiRouter::handle_parse_csv);
+    server.set_route("POST", "/api/v1/benchmark/run", &ApiRouter::handle_benchmark_run);
+    server.set_route("GET", "/api/v1/benchmark/run", &ApiRouter::handle_benchmark_run);
+    server.set_route("POST", "/api/v1/benchmark/export", &ApiRouter::handle_benchmark_export);
+    server.set_route("GET", "/api/v1/benchmark/export", &ApiRouter::handle_benchmark_export);
 }
 
 HttpResponse ApiRouter::handle_health(const HttpRequest& /*req*/) {
@@ -427,6 +432,154 @@ HttpResponse ApiRouter::handle_parse_csv(const HttpRequest& req) {
     root["units"] = units;
 
     return HttpResponse::ok_json(root);
+}
+
+namespace {
+
+uew::benchmark::BenchmarkConfig parse_benchmark_config(const HttpRequest& req) {
+    uew::benchmark::BenchmarkConfig cfg;
+
+    std::string q_cases = req.get_query_param("case_count");
+    if (!q_cases.empty()) {
+        try { cfg.case_count = std::stoi(q_cases); } catch (...) {}
+    }
+    std::string q_elem = req.get_query_param("elements");
+    if (!q_elem.empty()) {
+        try { cfg.elements = std::stoi(q_elem); } catch (...) {}
+    }
+    std::string q_seed = req.get_query_param("seed");
+    if (!q_seed.empty()) {
+        try { cfg.seed = static_cast<uint32_t>(std::stoul(q_seed)); } catch (...) {}
+    }
+    std::string q_rep = req.get_query_param("repetitions");
+    if (!q_rep.empty()) {
+        try { cfg.repetitions = std::stoi(q_rep); } catch (...) {}
+    }
+
+    if (!req.body.empty() && req.body.front() == '{') {
+        try {
+            Json body = Json::parse(req.body);
+            if (body.contains("case_count") && body["case_count"].is_number()) {
+                cfg.case_count = static_cast<int>(body["case_count"].as_number());
+            }
+            if (body.contains("elements") && body["elements"].is_number()) {
+                cfg.elements = static_cast<int>(body["elements"].as_number());
+            }
+            if (body.contains("seed") && body["seed"].is_number()) {
+                cfg.seed = static_cast<uint32_t>(body["seed"].as_number());
+            }
+            if (body.contains("repetitions") && body["repetitions"].is_number()) {
+                cfg.repetitions = static_cast<int>(body["repetitions"].as_number());
+            }
+            if (body.contains("worker_counts") && body["worker_counts"].is_array()) {
+                cfg.worker_counts.clear();
+                for (const auto& w : body["worker_counts"].as_array()) {
+                    if (w.is_number()) {
+                        cfg.worker_counts.push_back(static_cast<int>(w.as_number()));
+                    }
+                }
+                if (cfg.worker_counts.empty()) {
+                    cfg.worker_counts = {1, 2, 4};
+                }
+            }
+        } catch (...) {
+            // Malformed body will trigger validation below
+        }
+    }
+
+    return cfg;
+}
+
+} // namespace
+
+HttpResponse ApiRouter::handle_benchmark_run(const HttpRequest& req) {
+    auto cfg = parse_benchmark_config(req);
+
+    if (cfg.case_count <= 0 || cfg.case_count > 50000) {
+        return HttpResponse::error_json(400, "Bad Request", "case_count must be an integer between 1 and 50,000");
+    }
+    if (cfg.elements <= 0 || cfg.elements > 1000) {
+        return HttpResponse::error_json(400, "Bad Request", "elements must be an integer between 1 and 1,000");
+    }
+    if (cfg.repetitions <= 0 || cfg.repetitions > 20) {
+        return HttpResponse::error_json(400, "Bad Request", "repetitions must be an integer between 1 and 20");
+    }
+
+    auto suite = uew::benchmark::BenchmarkHarness::runSuite(cfg);
+
+    Json root;
+    root["status"] = "ok";
+
+    Json j_config;
+    j_config["case_count"] = suite.config.case_count;
+    j_config["elements"] = suite.config.elements;
+    j_config["repetitions"] = suite.config.repetitions;
+    j_config["seed"] = static_cast<int64_t>(suite.config.seed);
+    root["config"] = j_config;
+
+    Json j_env;
+    j_env["cpu_model"] = suite.environment.cpu_model;
+    j_env["logical_cores"] = static_cast<int64_t>(suite.environment.logical_cores);
+    j_env["physical_cores"] = static_cast<int64_t>(suite.environment.physical_cores);
+    j_env["total_ram_bytes"] = static_cast<int64_t>(suite.environment.total_ram_bytes);
+    j_env["compiler"] = suite.environment.compiler;
+    j_env["build_mode"] = suite.environment.build_mode;
+    j_env["timer_clock"] = suite.environment.timer_clock;
+    j_env["timing_scope"] = suite.environment.timing_scope;
+    root["environment"] = j_env;
+
+    std::vector<Json> j_workers;
+    for (const auto& w : suite.worker_results) {
+        Json jw;
+        jw["worker_count"] = w.worker_count;
+        jw["is_serial_baseline"] = w.is_serial_baseline;
+
+        std::vector<Json> j_reps;
+        for (double r : w.repetition_ms) {
+            j_reps.emplace_back(r);
+        }
+        jw["repetition_ms"] = j_reps;
+        jw["median_ms"] = w.median_ms;
+        jw["speedup"] = w.speedup;
+        jw["efficiency"] = w.efficiency;
+        jw["max_discrepancy_vs_serial_C"] = w.max_discrepancy_vs_serial_C;
+        jw["numerical_agreement_passed"] = w.numerical_agreement_passed;
+
+        j_workers.push_back(jw);
+    }
+    root["worker_results"] = j_workers;
+
+    root["max_global_discrepancy_C"] = suite.max_global_discrepancy_C;
+    root["numerical_agreement_passed"] = suite.numerical_agreement_passed;
+    root["all_passed"] = suite.all_passed;
+    root["notes"] = suite.notes;
+
+    return HttpResponse::ok_json(root);
+}
+
+HttpResponse ApiRouter::handle_benchmark_export(const HttpRequest& req) {
+    auto cfg = parse_benchmark_config(req);
+
+    if (cfg.case_count <= 0 || cfg.case_count > 50000) {
+        return HttpResponse::error_json(400, "Bad Request", "case_count must be an integer between 1 and 50,000");
+    }
+    if (cfg.elements <= 0 || cfg.elements > 1000) {
+        return HttpResponse::error_json(400, "Bad Request", "elements must be an integer between 1 and 1,000");
+    }
+    if (cfg.repetitions <= 0 || cfg.repetitions > 20) {
+        return HttpResponse::error_json(400, "Bad Request", "repetitions must be an integer between 1 and 20");
+    }
+
+    auto suite = uew::benchmark::BenchmarkHarness::runSuite(cfg);
+    std::string csv = uew::benchmark::BenchmarkHarness::exportBenchmarkCsv(suite);
+
+    HttpResponse res;
+    res.status_code = 200;
+    res.status_text = "OK";
+    res.headers["Content-Type"] = "text/csv; charset=utf-8";
+    res.headers["Content-Disposition"] = "attachment; filename=\"benchmark_results.csv\"";
+    res.body = csv;
+    return res;
 }
 
 } // namespace uew::api

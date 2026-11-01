@@ -32,6 +32,12 @@ const api: WorkbenchAPI = {
   },
   saveCsvFile: async (defaultFilename: string, content: string) => {
     return ipcRenderer.invoke('dialog:save-file', { defaultFilename, content });
+  },
+  runBenchmark: async (config?: any) => {
+    return ipcRenderer.invoke('api:run-benchmark', config);
+  },
+  exportBenchmarkCsv: async (config?: any) => {
+    return ipcRenderer.invoke('api:export-benchmark', config);
   }
 };
 

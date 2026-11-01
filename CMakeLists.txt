@@ -24,6 +24,15 @@ add_library(uew_core
     src/core/parsers/StlParser.cpp
     src/core/parsers/CsvParser.h
     src/core/parsers/CsvParser.cpp
+    src/core/benchmark/BenchmarkModels.h
+    src/core/benchmark/EnvironmentHelper.h
+    src/core/benchmark/EnvironmentHelper.cpp
+    src/core/benchmark/WorkloadGenerator.h
+    src/core/benchmark/WorkloadGenerator.cpp
+    src/core/benchmark/ParallelExecutor.h
+    src/core/benchmark/ParallelExecutor.cpp
+    src/core/benchmark/BenchmarkHarness.h
+    src/core/benchmark/BenchmarkHarness.cpp
 )
 
 target_include_directories(uew_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -56,6 +65,12 @@ if(BUILD_TESTING AND UEW_BUILD_TESTS)
     target_link_libraries(uew_parser_tests PRIVATE uew_core)
     add_test(NAME uew_parser_tests COMMAND uew_parser_tests)
     set_tests_properties(uew_parser_tests PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+
+    add_executable(uew_benchmark_tests
+        tests/test_benchmark.cpp
+    )
+    target_link_libraries(uew_benchmark_tests PRIVATE uew_core)
+    add_test(NAME uew_benchmark_tests COMMAND uew_benchmark_tests)
 endif()
 
 # ---------------------------------------------------------------------------

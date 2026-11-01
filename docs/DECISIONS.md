@@ -64,3 +64,15 @@ Existing FEM files and tests are preserved byte-for-byte until a separately appr
 - **Host Development Environment**: Node.js `22.20.0` and npm `11.11.1` (strictly distinguished from Electron's embedded Node.js; used for build, TypeScript checking, and dev orchestration)
 **Process Lifecycle Note:**
 - The `SHUTDOWN` stdin notification protocol and stdin EOF termination between Electron Main and the C++ backend have been fully implemented in `src/main_backend.cpp` and `electron/main/backend-manager.ts`, and verified via CTest and Electron integration tests (clean process exit with exit code 0). Fallback forceful process tree termination (`taskkill /pid ${pid} /T /F`) protects against abnormal hangs on Windows.
+
+## ADR-011 — Multicore Performance Benchmarking Architecture
+**Status:** Accepted.
+**Context:**
+Assignment Requirement D mandates serial baseline vs. CPU-parallel batch solves in C++ with bounded worker pool (1, 2, 4 workers), deterministic result ordering, reproducible fixed-seed generation, 5 repetitions, median timing, speedup/efficiency calculation, and numerical agreement within $\le 10^{-8}\ ^\circ\text{C}$.
+**Decision:**
+1. **Genuine Serial Baseline**: The $T_1$ baseline executes a pure sequential loop in C++ with zero threads or atomic synchronization to avoid thread-pool overhead distortions.
+2. **Bounded C++17 Worker Pool**: Parallel execution uses standard C++17 `std::thread`, with worker counts bounded by $\min(P_{\text{requested}}, \text{hardware\_concurrency()})$.
+3. **Deterministic Memory & Ordering**: Results are written directly to pre-allocated index slots `results[i] = solveSteady1DRod(cases[i])`. Each thread processes an independent index slice `[start_idx, end_idx)`. Zero shared mutable state, zero locks during numerical computation, guaranteed input-to-output ordering.
+4. **Isolated Compute Wall-Time**: Timing is recorded with `std::chrono::steady_clock` (backed by Windows `QueryPerformanceCounter`, $\approx 100\ \text{ns}$ resolution). Thread spawn, execution, and join are included in the measured parallel interval; workload generation, JSON parsing/serialization, and UI dispatch are strictly excluded.
+5. **Runtime Hardware Disclosure**: Processor model (brand string via `__cpuid`), core counts (`hardware_concurrency` and Win32 `RelationProcessorCore`), physical RAM (`GlobalMemoryStatusEx`), and compiler flags (`_MSC_FULL_VER`, Release `/O2`) are dynamically queried in C++ rather than hardcoded.
+6. **Pure-React SVG Benchmark Chart (`BenchmarkChart.tsx`)**: Visualizes measured speedup and parallel efficiency against ideal linear scaling with hover tooltips and dual mode toggles, requiring zero third-party chart dependencies.

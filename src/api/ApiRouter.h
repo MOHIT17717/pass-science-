@@ -17,6 +17,8 @@ public:
     static HttpResponse handle_thermal_export(const HttpRequest& req);
     static HttpResponse handle_parse_stl(const HttpRequest& req);
     static HttpResponse handle_parse_csv(const HttpRequest& req);
+    static HttpResponse handle_benchmark_run(const HttpRequest& req);
+    static HttpResponse handle_benchmark_export(const HttpRequest& req);
 };
 
 } // namespace uew::api

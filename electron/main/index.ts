@@ -336,6 +336,85 @@ async function runWorkbenchVerification(win: BrowserWindow): Promise<boolean> {
       passed = false;
     }
     await saveScreenshot(win, 'thermal_results_view');
+
+    // 6. Multicore Performance Benchmarking Verification (Task 10)
+    console.log('[WORKBENCH VERIFY] Testing Multicore Benchmark Execution...');
+    try {
+      const benchData = await win.webContents.executeJavaScript(`
+        window.workbenchAPI.runBenchmark({
+          case_count: 100,
+          elements: 20,
+          worker_counts: [1, 2, 4],
+          repetitions: 3,
+          seed: 12345
+        })
+      `);
+
+      if (benchData && benchData.status === 'ok' && benchData.worker_results?.length === 3 && benchData.all_passed && benchData.max_global_discrepancy_C <= 1.0e-8) {
+        console.log(`[WORKBENCH VERIFY] PASS: Multicore benchmark verified (3 worker configs, all_passed=true, discrepancy=${benchData.max_global_discrepancy_C} <= 1e-8 C).`);
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Multicore benchmark data invalid:', benchData);
+        passed = false;
+      }
+
+      const benchCsv = await win.webContents.executeJavaScript(`
+        window.workbenchAPI.exportBenchmarkCsv({
+          case_count: 100,
+          elements: 20,
+          worker_counts: [1, 2, 4],
+          repetitions: 3,
+          seed: 12345
+        })
+      `);
+
+      if (benchCsv && benchCsv.status === 'ok' && benchCsv.csv?.includes('# Unified Engineering Workbench - Multicore Benchmark Export')) {
+        console.log(`[WORKBENCH VERIFY] PASS: Multicore benchmark CSV export verified (${benchCsv.rowCount} worker rows).`);
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Benchmark CSV export invalid:', benchCsv);
+        passed = false;
+      }
+
+      // Switch tab to performance and verify UI components
+      const perfStep = await win.webContents.executeJavaScript(`
+        (async () => {
+          const navButtons = Array.from(document.querySelectorAll('header nav button'));
+          const perfTabBtn = navButtons.find(b => b.textContent && b.textContent.includes('Performance'));
+          if (perfTabBtn) {
+            perfTabBtn.click();
+          }
+
+          let waited = 0;
+          while (waited < 6000 && !document.body.innerText.includes('Multicore Performance & Parallel Benchmarking')) {
+            await new Promise(r => setTimeout(r, 200));
+            waited += 200;
+          }
+
+          while (waited < 10000 && document.body.innerText.includes('Running Benchmark...')) {
+            await new Promise(r => setTimeout(r, 200));
+            waited += 200;
+          }
+
+          const text = document.body.innerText;
+          const hasCpuModel = text.includes('12th Gen Intel') || text.includes('Processor:');
+          const hasTimingsTable = text.includes('Execution Timings & Scaling Metrics') && !!document.querySelector('table');
+          const hasPassBadge = text.includes('ALL VERIFICATIONS PASSED') || text.includes('PASS');
+          const hasSpeedup = text.includes('Speedup') || text.includes('S_p');
+          return { hasCpuModel, hasTimingsTable, hasPassBadge, hasSpeedup };
+        })()
+      `);
+
+      if (perfStep.hasCpuModel && perfStep.hasTimingsTable && perfStep.hasPassBadge && perfStep.hasSpeedup) {
+        console.log('[WORKBENCH VERIFY] PASS: Performance Workspace UI verified (CPU model disclosed, timings table mounted, PASS badge, speedup metrics).');
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Performance Workspace UI step failed:', perfStep);
+        passed = false;
+      }
+
+      await saveScreenshot(win, 'performance_results_view');
+    } catch (err: any) {
+      console.error('[WORKBENCH VERIFY] FAIL: Multicore benchmark execution exception:', err.message);
+      passed = false;
+    }
   } catch (err: any) {
     console.error('[WORKBENCH VERIFY] FAIL: Renderer execution error:', err.message);
     passed = false;
@@ -582,6 +661,34 @@ ipcMain.handle('dialog:save-file', async (event, args: { defaultFilename: string
     return { success: true, filePath: result.filePath };
   } catch (err: any) {
     return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('api:run-benchmark', async (event, config: any) => {
+  if (mainWindow && !validateIpcSender(mainWindow.webContents, event.senderFrame)) {
+    throw new Error('Unauthorized IPC sender frame');
+  }
+  const payload = config ? JSON.stringify(config) : '{}';
+  const res = await backendManager.dispatchRequest('/api/v1/benchmark/run', 'POST', payload);
+  try {
+    return JSON.parse(res.data);
+  } catch (err: any) {
+    return { status: 'error', error: 'Failed to parse benchmark JSON response', details: res.data };
+  }
+});
+
+ipcMain.handle('api:export-benchmark', async (event, config: any) => {
+  if (mainWindow && !validateIpcSender(mainWindow.webContents, event.senderFrame)) {
+    throw new Error('Unauthorized IPC sender frame');
+  }
+  const payload = config ? JSON.stringify(config) : '{}';
+  const res = await backendManager.dispatchRequest('/api/v1/benchmark/export', 'POST', payload);
+  if (res.statusCode === 200) {
+    const lines = res.data.split('\n');
+    const dataRows = lines.filter((l: string) => l.trim().length > 0 && !l.startsWith('#') && !l.startsWith('worker_count'));
+    return { status: 'ok', csv: res.data, rowCount: dataRows.length };
+  } else {
+    return { status: 'error', error: `Benchmark export failed with HTTP ${res.statusCode}: ${res.data}` };
   }
 });
 
