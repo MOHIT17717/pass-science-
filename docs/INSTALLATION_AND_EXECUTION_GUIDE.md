@@ -99,3 +99,4 @@ npm run package:standalone
 * **Port Conflict Recovery:** If the default port is blocked, `Launch.exe` automatically negotiates the next available ephemeral port.
 * **Runtime DLL Resolution:** All required MSVC runtime libraries (`vcruntime140.dll`, `msvcp140.dll`) are placed directly in `bin/` alongside `uew_backend.exe` to guarantee zero machine dependency.
 * **Working Tree Cleanliness:** Baseline FEM solver files (`src/core/thermal/FEMSolver.cpp`, `FEMSolver.h`, `ThermalModels.h`, `tests/test_fem.cpp`) remain 100% byte-for-byte identical to baseline SHA-256 hashes.
+
