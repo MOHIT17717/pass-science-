@@ -262,6 +262,80 @@ async function runWorkbenchVerification(win: BrowserWindow): Promise<boolean> {
       console.error('[WORKBENCH VERIFY] FAIL: Camera controls check failed:', cameraStep);
       passed = false;
     }
+
+    // 5. Task 09 Thermal FEM Analysis & 2D Results Verification
+    // 5.1 Backend Solve API verification
+    try {
+      const solveRes = await backendManager.dispatchRequest('/api/v1/thermal/solve', 'GET');
+      const solveData = JSON.parse(solveRes.data);
+      const isAreaValid = solveData.problem?.area_m2 === 0.0001;
+      const hasAnalyticalCurve = solveData.analytical_curve?.sample_count === 201;
+      const has4Meshes = solveData.meshes?.length === 4;
+      const isConvergenceRate2 = Math.abs((solveData.meshes?.[3]?.convergence_rate ?? 0) - 2.0) < 0.05;
+
+      if (solveRes.statusCode === 200 && isAreaValid && hasAnalyticalCurve && has4Meshes && isConvergenceRate2) {
+        console.log('[WORKBENCH VERIFY] PASS: Backend thermal solve verified (A=0.0001 m², 201 analytical curve samples, 4 meshes, O(h²) rate 2.0).');
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Backend thermal solve invalid:', solveData);
+        passed = false;
+      }
+    } catch (err: any) {
+      console.error('[WORKBENCH VERIFY] FAIL: Backend thermal solve exception:', err.message);
+      passed = false;
+    }
+
+    // 5.2 Backend CSV Export & Row Count verification
+    try {
+      const expRes = await backendManager.dispatchRequest('/api/v1/thermal/export?elements=80&type=combined', 'GET');
+      const lines = expRes.data.split(/\r?\n/).filter((l: string) => l.trim().length > 0);
+      const dataRows = lines.filter((l: string) => !l.startsWith('#') && !l.startsWith('record_type'));
+
+      if (expRes.statusCode === 200 && dataRows.length === 161) {
+        console.log(`[WORKBENCH VERIFY] PASS: Backend thermal combined CSV export verified: exactly ${dataRows.length} data rows (81 nodes + 80 midpoints).`);
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Thermal CSV export invalid row count:', dataRows.length);
+        passed = false;
+      }
+    } catch (err: any) {
+      console.error('[WORKBENCH VERIFY] FAIL: Thermal CSV export exception:', err.message);
+      passed = false;
+    }
+
+    // 5.3 Renderer UI: Switch to Thermal Tab & Verify Chart + Table + Area
+    const thermalStep = await win.webContents.executeJavaScript(`
+      (async () => {
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const thermalTab = buttons.find(b => b.textContent && b.textContent.includes('Thermal FEM'));
+        if (thermalTab) thermalTab.click();
+        await sleep(1000);
+
+        const body = document.body.innerText;
+        const hasSvgChart = !!document.querySelector('svg');
+        const hasArea = body.includes('0.0001 m²');
+        const hasConvergenceTable = body.includes('Mesh Convergence & Error Analysis Verification');
+        const hasPassBadge = body.includes('PASS');
+        const hasRates = body.includes('O(h²)');
+        const hasExports = body.includes('Export Combined CSV');
+
+        return {
+          hasSvgChart,
+          hasArea,
+          hasConvergenceTable,
+          hasPassBadge,
+          hasRates,
+          hasExports
+        };
+      })()
+    `);
+
+    if (thermalStep.hasSvgChart && thermalStep.hasArea && thermalStep.hasConvergenceTable && thermalStep.hasPassBadge) {
+      console.log('[WORKBENCH VERIFY] PASS: Thermal Workspace UI verified (A=0.0001 m², SVG chart mounted, convergence table populated, PASS badges).');
+    } else {
+      console.error('[WORKBENCH VERIFY] FAIL: Thermal Workspace UI step failed:', thermalStep);
+      passed = false;
+    }
+    await saveScreenshot(win, 'thermal_results_view');
   } catch (err: any) {
     console.error('[WORKBENCH VERIFY] FAIL: Renderer execution error:', err.message);
     passed = false;
@@ -425,6 +499,90 @@ ipcMain.handle('dialog:open-file', async (event, type: 'stl' | 'csv') => {
   const filename = path.basename(filePath);
   const content = await fs.promises.readFile(filePath, 'utf8');
   return { filename, content };
+});
+
+ipcMain.handle('api:solve-thermal', async (event, elements?: number) => {
+  if (mainWindow && !validateIpcSender(mainWindow.webContents, event.senderFrame)) {
+    throw new Error('Unauthorized IPC sender frame');
+  }
+  try {
+    const endpoint = elements !== undefined
+      ? `/api/v1/thermal/solve?elements=${elements}`
+      : '/api/v1/thermal/solve';
+    const res = await backendManager.dispatchRequest(endpoint, 'GET');
+    try {
+      const parsed = JSON.parse(res.data);
+      if (res.statusCode !== 200) {
+        return {
+          status: 'error',
+          error: parsed.error || `HTTP ${res.statusCode}`,
+          details: parsed.details || ''
+        };
+      }
+      return parsed;
+    } catch {
+      return { status: 'error', error: `Invalid response from backend (HTTP ${res.statusCode})` };
+    }
+  } catch (err: any) {
+    return { status: 'error', error: err.message };
+  }
+});
+
+ipcMain.handle('api:export-thermal', async (event, args: { elements: number; type: 'nodal' | 'midpoint' | 'combined' }) => {
+  if (mainWindow && !validateIpcSender(mainWindow.webContents, event.senderFrame)) {
+    throw new Error('Unauthorized IPC sender frame');
+  }
+  try {
+    const endpoint = `/api/v1/thermal/export?elements=${args.elements}&type=${args.type}`;
+    const res = await backendManager.dispatchRequest(endpoint, 'GET');
+    if (res.statusCode !== 200) {
+      try {
+        const errJson = JSON.parse(res.data);
+        return { status: 'error', error: errJson.error || `HTTP ${res.statusCode}` };
+      } catch {
+        return { status: 'error', error: `HTTP ${res.statusCode}` };
+      }
+    }
+
+    // Count actual data rows (excluding comment lines and header)
+    const lines = res.data.split(/\r?\n/).filter(line => line.trim().length > 0);
+    const dataRows = lines.filter(line => !line.startsWith('#') && !line.startsWith('node_id') && !line.startsWith('element_id') && !line.startsWith('record_type'));
+
+    return {
+      status: 'ok',
+      csv: res.data,
+      rowCount: dataRows.length
+    };
+  } catch (err: any) {
+    return { status: 'error', error: err.message };
+  }
+});
+
+ipcMain.handle('dialog:save-file', async (event, args: { defaultFilename: string; content: string }) => {
+  if (mainWindow && !validateIpcSender(mainWindow.webContents, event.senderFrame)) {
+    throw new Error('Unauthorized IPC sender frame');
+  }
+  if (!mainWindow) return { success: false, error: 'No main window' };
+
+  try {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save Thermal CSV Export',
+      defaultPath: args.defaultFilename,
+      filters: [
+        { name: 'CSV Files', extensions: ['csv'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true };
+    }
+
+    await fs.promises.writeFile(result.filePath, args.content, 'utf8');
+    return { success: true, filePath: result.filePath };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('sample:load', async (event, type: 'stl' | 'csv') => {

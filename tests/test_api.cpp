@@ -226,6 +226,9 @@ void test_api_lifecycle_and_validation() {
         post_solve_body = resp.substr(b_pos + 4);
         Json j = Json::parse(post_solve_body);
         TEST_ASSERT(j["status"].as_string() == "ok", "Thermal status ok");
+        TEST_ASSERT(j["problem"]["area_m2"].as_number() == 0.0001, "Cross-sectional area is 0.0001 m^2");
+        TEST_ASSERT(j.contains("analytical_curve"), "Response contains analytical_curve");
+        TEST_ASSERT(j["analytical_curve"]["sample_count"].as_int() == 201, "Analytical curve has 201 samples");
         TEST_ASSERT(j["mesh"]["elements"].as_int() == 80, "Elements == 80");
         TEST_ASSERT(j["mesh"]["node_count"].as_int() == 81, "Node count == 81");
         TEST_ASSERT(j["mesh"]["midpoints"].as_array().size() == 80, "Midpoint array size == 80");

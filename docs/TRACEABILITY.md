@@ -13,10 +13,10 @@ The assignment PDF remains authoritative. This matrix is a project implementatio
 | B: rotate/pan/zoom/fit | Three.js controls | 08 | `ThreeViewport.tsx` OrbitControls, `fitCameraToObject`, `ViewportControls.tsx` presets |
 | B: coloured point cloud, legend, node inspection | Three.js point rendering + React UI | 08 | `ThreeViewport.tsx` spectral colormap, `TemperatureLegend.tsx` vertical bar in °C, raycast node picker |
 | B: provenance, units, limits, malformed input | Data manifest and C++ validation | 07, 08 | `data/DATA_PROVENANCE.md`, synthetic provenance badge, 10 MB caps, binary rejection, duplicate node_id rejection |
-| C: 1D two-node linear thermal FEM | Existing C++ solver, verified against assignment | 06 | Unit tests and equations |
-| C: N=10/20/40/80 and analytical comparison | C++ solver + result series | 06, 10 | CSV, plots, error report |
-| C: midpoint interpolation max error | C++ calculation at element midpoints | 06 | Automated numerical assertion |
-| C: assumptions, units, BCs, debugging insight | Report and UI metadata | 06, 18 | Technical report |
+| C: 1D two-node linear thermal FEM | Existing C++ solver, verified against assignment | 06, 09 | Unit tests, C++ core solver, and `ThermalWorkspace.tsx` integration |
+| C: N=10/20/40/80 and analytical comparison | C++ solver + result series | 06, 09 | `ThermalWorkspace.tsx`, `ThermalChart.tsx` 2D plot (continuous analytical vs. FEM segments), CSV exports |
+| C: midpoint interpolation max error | C++ calculation at element midpoints | 06, 09 | Automated numerical assertion, convergence table ($0.01953125^\circ\text{C}$ for N=80), error profile plot |
+| C: assumptions, units, BCs, debugging insight | Report and UI metadata | 06, 09, 18 | Physical parameter card (A=0.0001 m², L=1.0 m, k=10, q=10000), Dirichlet BCs (100 °C, 20 °C), technical report |
 | D: serial and parallel batch solves | C++ deterministic generator and worker pool | 12, 13 | Tests and source |
 | D: 1/2/up to 4 workers and reproducibility | Bounded C++ pool and ordered results | 13 | Comparison tests |
 | D: five repetitions, median, speedup, efficiency | C++ benchmark harness | 14 | CSV and plots |

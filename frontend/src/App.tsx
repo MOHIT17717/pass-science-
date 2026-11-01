@@ -4,6 +4,7 @@ import { TemperatureLegend } from './components/TemperatureLegend';
 import { ViewportControls } from './components/ViewportControls';
 import { GeometryWorkspace } from './features/geometry/GeometryWorkspace';
 import { TemperatureWorkspace } from './features/temperature/TemperatureWorkspace';
+import { ThermalWorkspace } from './features/thermal/ThermalWorkspace';
 import type { BackendStatus } from '../../electron/preload/api';
 import type { StlModelData, GeometryViewOptions } from './types/geometry';
 import type { TemperatureDatasetData, TemperatureViewOptions, InspectedNode } from './types/temperature';
@@ -388,14 +389,12 @@ export const App: React.FC = () => {
               )}
             </div>
           </>
+        ) : activeTab === 'thermal' ? (
+          <div style={{ flex: 1, width: '100%', overflowY: 'auto' }}>
+            <ThermalWorkspace />
+          </div>
         ) : (
           <div style={{ padding: '32px', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
-            {activeTab === 'thermal' && (
-              <div>
-                <h2>2. Thermal FEA Analysis</h2>
-                <p style={{ color: '#aaa' }}>1D Steady-State Thermal Finite Element Solver baseline verified in C++ core.</p>
-              </div>
-            )}
             {activeTab === 'performance' && (
               <div>
                 <h2>3. Multicore Performance Benchmarking</h2>

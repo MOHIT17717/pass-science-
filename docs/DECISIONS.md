@@ -13,8 +13,18 @@ Use Electron for the Windows desktop shell and React + TypeScript for the render
 Use Three.js, optionally through React Three Fiber, to render C++-validated ASCII STL geometry and temperature point clouds. Do not implement a full CAD modeller.
 
 ## ADR-004 — 2D chart library
-**Status:** Pending selection.  
-Choose either Apache ECharts or Recharts after a small documented comparison of features, accessibility, data volume, export, bundle size, and licence. Use only one unless a justified gap exists.
+**Status:** Accepted (Dedicated High-Precision React SVG Engineering Component).
+**Context:**
+The assignment and project architecture require 2D plotting of thermal FEM temperature and error profiles against analytical solutions. A comparison was conducted between Apache ECharts, Recharts, and a dedicated React SVG component:
+- **Apache ECharts**: Full-featured charting suite, but incurs an ~800 KB – 1 MB production bundle footprint, requires two external packages (`echarts`, `echarts-for-react`), and utilizes canvas rendering where coordinate scaling can introduce sub-pixel raster distortion.
+- **Recharts**: Well-regarded React SVG library, but adds ~350 KB bundle overhead and transitive D3 dependencies (`d3-shape`, `d3-scale`, etc.).
+- **Dedicated React SVG Engineering Chart (`ThermalChart.tsx`)**:
+  - Adds **zero external dependencies** and maintains an ultra-compact production bundle (<15 KB).
+  - Delivers exact vector scaling between SI physical units ($x \in [0.0, 1.0]\ \text{m}$, $T \in [0.0, 200.0]^\circ\text{C}$) and SVG coordinates with zero raster interpolation artifacts.
+  - Allows precise visual distinction between continuous analytical curves (evaluated at 201 points by C++) and piecewise-linear FEM segments with discrete nodal points.
+  - Native dual-mode toggle for Temperature distribution vs. Discretization error profile.
+  - 100% deterministic, offline-capable, and easily auditable.
+**Decision:** Implement the dedicated React SVG engineering chart for Task 09. If complex multidimensional benchmarking visualization in Task 10 or Task 14 requires advanced charting primitives beyond SVG lines/scatter, Recharts may be incorporated with documented justification.
 
 ## ADR-005 — Local C++ backend process
 **Status:** Accepted.

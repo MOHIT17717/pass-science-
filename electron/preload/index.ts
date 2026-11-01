@@ -23,6 +23,15 @@ const api: WorkbenchAPI = {
   },
   loadSample: async (type: 'stl' | 'csv'): Promise<FilePayload> => {
     return ipcRenderer.invoke('sample:load', type);
+  },
+  solveThermal: async (elements?: number) => {
+    return ipcRenderer.invoke('api:solve-thermal', elements);
+  },
+  exportThermalCsv: async (elements: number, type: 'nodal' | 'midpoint' | 'combined') => {
+    return ipcRenderer.invoke('api:export-thermal', { elements, type });
+  },
+  saveCsvFile: async (defaultFilename: string, content: string) => {
+    return ipcRenderer.invoke('dialog:save-file', { defaultFilename, content });
   }
 };
 

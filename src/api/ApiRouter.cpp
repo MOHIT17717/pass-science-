@@ -163,6 +163,23 @@ HttpResponse ApiRouter::handle_thermal_solve(const HttpRequest& req) {
     };
     root["assumptions"] = assumptions;
 
+    // High-resolution continuous analytical sampling (201 points) evaluated exclusively in C++
+    constexpr int NUM_ANALYTICAL_SAMPLES = 201;
+    std::vector<Json> curve_x;
+    std::vector<Json> curve_t;
+    curve_x.reserve(NUM_ANALYTICAL_SAMPLES);
+    curve_t.reserve(NUM_ANALYTICAL_SAMPLES);
+    for (int k = 0; k < NUM_ANALYTICAL_SAMPLES; ++k) {
+        double x = static_cast<double>(k) / (NUM_ANALYTICAL_SAMPLES - 1) * p.length_m;
+        curve_x.emplace_back(x);
+        curve_t.emplace_back(uew::thermal::analyticalTemperature(p, x));
+    }
+    Json analytical_curve;
+    analytical_curve["sample_count"] = NUM_ANALYTICAL_SAMPLES;
+    analytical_curve["x_m"] = curve_x;
+    analytical_curve["temperature_C"] = curve_t;
+    root["analytical_curve"] = analytical_curve;
+
     if (requested_elements != -1) {
         p.elements = requested_elements;
         auto m_res = uew::thermal::ThermalVerification::solve_and_verify(p);
