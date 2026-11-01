@@ -102,6 +102,19 @@ async function runWorkbenchVerification(win: BrowserWindow): Promise<boolean> {
 
   // 4. Renderer UI, Interactive Three.js Workflow, Screenshots, and Verification
   try {
+    // Wait for React shell to mount in Vite dev or production mode
+    await win.webContents.executeJavaScript(`
+      new Promise((resolve) => {
+        const interval = setInterval(() => {
+          if (document.querySelectorAll('button').length > 0) {
+            clearInterval(interval);
+            resolve(true);
+          }
+        }, 100);
+        setTimeout(() => { clearInterval(interval); resolve(false); }, 10000);
+      })
+    `);
+
     // 4.1 CAD-Only View: Click "CAD Geometry" and "Load Sample Bracket"
     const cadStep = await win.webContents.executeJavaScript(`
       (async () => {
@@ -670,16 +683,16 @@ async function createWindow(): Promise<BrowserWindow> {
     mainWindow?.show();
     console.log('[ELECTRON] Window ready-to-show successfully.');
 
-    // Automated verification support: run verification if requested
-    if (process.env.TEST_WORKBENCH_VERIFY) {
+    // Automated verification support: run verification only in dev mode if explicitly requested
+    if (isDev && process.env.TEST_WORKBENCH_VERIFY) {
       const verifySuccess = await runWorkbenchVerification(mainWindow!);
       if (!verifySuccess) {
         process.exitCode = 1;
       }
     }
 
-    // Auto-close after verification window
-    if (process.env.TEST_AUTOCLOSE) {
+    // Auto-close after verification window in development mode only
+    if (isDev && process.env.TEST_AUTOCLOSE) {
       const delay = parseInt(process.env.TEST_AUTOCLOSE, 10) || 3000;
       setTimeout(() => {
         console.log('[ELECTRON] Test auto-close delay elapsed; closing window.');
@@ -1027,13 +1040,73 @@ ipcMain.handle('api:backprop-export', async (event, args?: { steps?: number }) =
 
 app.whenReady().then(createWindow);
 
-app.on('window-all-closed', async () => {
-  await backendManager.stop();
-  if (process.platform !== 'darwin') {
-    app.quit();
+let isAppShuttingDown = false;
+
+async function gracefulAppShutdown(source: string): Promise<void> {
+  if (isAppShuttingDown) return;
+  isAppShuttingDown = true;
+  console.log(`[ELECTRON] Initiating graceful application shutdown (source: ${source})...`);
+  try {
+    await backendManager.stop();
+  } catch (err: any) {
+    console.error(`[ELECTRON] Error stopping backend during shutdown: ${err?.message || err}`);
   }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      mainWindow.destroy();
+    } catch {}
+  }
+  app.quit();
+}
+
+process.on('SIGINT', () => {
+  gracefulAppShutdown('SIGINT');
+});
+
+process.on('SIGTERM', () => {
+  gracefulAppShutdown('SIGTERM');
+});
+
+// Development mode: watch launcher control file for explicit shutdown requests
+const devShutdownFile = process.env.DEV_SHUTDOWN_FILE;
+if (isDev && devShutdownFile) {
+  const checkControlFile = () => {
+    try {
+      if (fs.existsSync(devShutdownFile)) {
+        const content = fs.readFileSync(devShutdownFile, 'utf8');
+        if (content.includes('SHUTDOWN')) {
+          gracefulAppShutdown('control-file:SHUTDOWN');
+        }
+      }
+    } catch {}
+  };
+  setInterval(checkControlFile, 100);
+  try {
+    const dir = path.dirname(devShutdownFile);
+    fs.watch(dir, (_event, filename) => {
+      if (filename && filename === path.basename(devShutdownFile)) {
+        checkControlFile();
+      }
+    });
+  } catch {}
+}
+
+if (process.stdin && typeof process.stdin.on === 'function') {
+  try {
+    process.stdin.resume();
+  } catch {}
+  process.stdin.on('data', (chunk) => {
+    const text = chunk.toString().trim();
+    if (text.includes('SHUTDOWN')) {
+      gracefulAppShutdown('stdin:SHUTDOWN');
+    }
+  });
+}
+
+app.on('window-all-closed', async () => {
+  await gracefulAppShutdown('window-all-closed');
 });
 
 app.on('before-quit', async () => {
-  await backendManager.stop();
+  await gracefulAppShutdown('before-quit');
 });

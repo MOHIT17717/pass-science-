@@ -14,10 +14,10 @@ export function setupSecurityPolicies(mainWindow: BrowserWindow, options: Securi
     let csp: string;
 
     if (isDev) {
-      // Development CSP: permits Vite dev server and HMR WebSocket
+      // Development CSP: permits Vite dev server, Fast Refresh inline preamble, and HMR WebSocket
       csp = [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-eval' http://127.0.0.1:5173",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:5173",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data:",
         "font-src 'self'",

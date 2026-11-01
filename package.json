@@ -5,15 +5,16 @@
   "private": true,
   "main": "dist/electron/main/index.js",
   "scripts": {
+    "build:backend": "node scripts/dev-launcher.js --build-only",
     "build:renderer": "vite build --config frontend/vite.config.ts",
     "build:electron": "tsc -p electron/tsconfig.json",
-    "build": "npm run build:renderer && npm run build:electron",
+    "build": "npm run build:backend && npm run build:renderer && npm run build:electron",
     "typecheck:renderer": "tsc -p frontend/tsconfig.json --noEmit",
     "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",
     "typecheck": "npm run typecheck:renderer && npm run typecheck:electron",
     "dev:renderer": "vite --config frontend/vite.config.ts",
     "dev:electron": "wait-on tcp:127.0.0.1:5173 && node scripts/run-electron.js .",
-    "dev": "concurrently -k -s first \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "dev": "node scripts/dev-launcher.js",
     "start": "node scripts/run-electron.js ."
   },
   "dependencies": {

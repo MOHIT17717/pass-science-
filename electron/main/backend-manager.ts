@@ -24,6 +24,7 @@ export class BackendManager {
   private readonly authToken: string;
   private port: number | null = null;
   private isOnline: boolean = false;
+  private stopPromise: Promise<void> | null = null;
 
   constructor() {
     // 32-byte cryptographically secure random token generated exclusively for this session.
@@ -137,6 +138,7 @@ export class BackendManager {
     }
 
     return new Promise((resolve) => {
+      this.stopPromise = null;
       console.log(`[BACKEND MANAGER] Spawning backend from: ${binaryPath}`);
       // Security: Only pass --port. Token is NEVER passed in command-line arguments.
       const args = ['--port', requestedPort.toString()];
@@ -289,68 +291,78 @@ export class BackendManager {
   /**
    * Gracefully terminates the C++ backend child process with Windows-aware process tree cleanup.
    * Protocol: Writes 'SHUTDOWN\n' over stdin, waits up to 2000ms, then enforces taskkill watchdog.
+   * Idempotent: Subsequent calls return the same in-flight or completed promise.
    */
   public async stop(): Promise<void> {
+    if (this.stopPromise) {
+      return this.stopPromise;
+    }
     if (!this.process || this.process.killed) {
       this.isOnline = false;
       return;
     }
 
-    const pid = this.process.pid;
-    if (!pid) {
-      this.isOnline = false;
-      return;
-    }
-
-    if (process.platform === 'win32') {
-      // 1. Attempt graceful stdin notification
-      try {
-        if (this.process.stdin && this.process.stdin.writable) {
-          this.process.stdin.write('SHUTDOWN\n');
-        }
-      } catch {
-        // Ignore stdin errors if process already exited
+    this.stopPromise = (async () => {
+      const proc = this.process;
+      const pid = proc?.pid;
+      if (!pid) {
+        this.isOnline = false;
+        this.process = null;
+        return;
       }
 
-      // 2. Wait up to 2000ms for graceful exit, then forceful tree-kill via taskkill watchdog
-      await new Promise<void>((resolve) => {
-        let finished = false;
-        const timer = setTimeout(() => {
-          if (!finished) {
-            finished = true;
-            // Forcefully terminate process and all child processes (/T /F)
-            exec(`taskkill /pid ${pid} /T /F`, () => resolve());
+      if (process.platform === 'win32') {
+        // 1. Attempt graceful stdin notification
+        try {
+          if (proc.stdin && proc.stdin.writable) {
+            proc.stdin.write('SHUTDOWN\n');
           }
-        }, 2000);
+        } catch {
+          // Ignore stdin errors if process already exited
+        }
 
-        this.process?.once('exit', () => {
-          if (!finished) {
-            finished = true;
+        // 2. Wait up to 2000ms for graceful exit, then forceful tree-kill via taskkill watchdog
+        await new Promise<void>((resolve) => {
+          let finished = false;
+          const timer = setTimeout(() => {
+            if (!finished) {
+              finished = true;
+              // Forcefully terminate process and all child processes (/T /F)
+              exec(`taskkill /pid ${pid} /T /F`, () => resolve());
+            }
+          }, 2000);
+
+          proc.once('exit', () => {
+            if (!finished) {
+              finished = true;
+              clearTimeout(timer);
+              resolve();
+            }
+          });
+        });
+      } else {
+        // POSIX fallback
+        proc.kill('SIGTERM');
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(() => {
+            if (proc && !proc.killed) {
+              proc.kill('SIGKILL');
+            }
+            resolve();
+          }, 2000);
+
+          proc.once('exit', () => {
             clearTimeout(timer);
             resolve();
-          }
+          });
         });
-      });
-    } else {
-      // POSIX fallback
-      this.process.kill('SIGTERM');
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          if (this.process && !this.process.killed) {
-            this.process.kill('SIGKILL');
-          }
-          resolve();
-        }, 2000);
+      }
 
-        this.process?.once('exit', () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
-    }
+      this.process = null;
+      this.isOnline = false;
+      this.port = null;
+    })();
 
-    this.process = null;
-    this.isOnline = false;
-    this.port = null;
+    return this.stopPromise;
   }
 }

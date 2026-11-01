@@ -19,6 +19,7 @@ Execute one task at a time. No task begins without user approval. Task 01 and Ta
 
 ## Sequencing notes
 - Tasks 03 through 11 are complete: C++ core build and tests verified under MSVC 19.51.36260 / CMake 4.5.0-rc2; Electron 45.2.1 + React 18.3.1 + Three.js 0.170.0 desktop shell verified under Node.js 22.20.0 / npm 11.11.1; C++ backend executable, loopback API, and stdin lifecycle verified; steady-state 1D thermal FEM verified across N=10/20/40/80 meshes with O(h^2) convergence, midpoint errors, and CSV export; C++ STL and temperature CSV parsers with 29 unit tests; React workbench UI and Three.js 3D visualization fully implemented and verified; Multicore performance benchmarking suite with 1/2/4 workers and agreement <= 1e-8 °C; Embedded hardware simulation and manual backpropagation neural network verified.
+- Task 12 (Phases 1–6B) unified development launcher implemented and verified: one-command `npm run dev` workflow with automated MSVC/CMake toolchain discovery, incremental C++ build, Electron compile, Vite dev server, Electron launch with dynamic port & token handshake, complete child process tree supervision, and guaranteed graceful Ctrl+C and UI window teardown with bounded fallback; updated `README.md` with full architecture, prerequisites, usage, and explicit simulation disclaimers.
 - Task 07 parsers are C++; Three.js receives validated geometry/data.
 - Three.js is visualization, not CAD editing.
 - Task 18 packaging is a hard acceptance gate, not an afterthought.
