@@ -42,4 +42,11 @@ declare module 'lucide-react' {
   export const Code2: LucideIcon;
   export const Sparkles: LucideIcon;
   export const ArrowDown: LucideIcon;
+  export const Github: LucideIcon;
+  export const MapPin: LucideIcon;
+  export const ExternalLink: LucideIcon;
+  export const Laptop: LucideIcon;
+  export const FolderDown: LucideIcon;
+  export const Play: LucideIcon;
+  export const ArrowUpRight: LucideIcon;
 }
