@@ -15,6 +15,8 @@ public:
     static HttpResponse handle_health(const HttpRequest& req);
     static HttpResponse handle_thermal_solve(const HttpRequest& req);
     static HttpResponse handle_thermal_export(const HttpRequest& req);
+    static HttpResponse handle_parse_stl(const HttpRequest& req);
+    static HttpResponse handle_parse_csv(const HttpRequest& req);
 };
 
 } // namespace uew::api

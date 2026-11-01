@@ -19,6 +19,11 @@ add_library(uew_core
     src/core/thermal/ThermalModels.h
     src/core/thermal/ThermalVerification.h
     src/core/thermal/ThermalVerification.cpp
+    src/core/parsers/ParserModels.h
+    src/core/parsers/StlParser.h
+    src/core/parsers/StlParser.cpp
+    src/core/parsers/CsvParser.h
+    src/core/parsers/CsvParser.cpp
 )
 
 target_include_directories(uew_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -44,6 +49,13 @@ if(BUILD_TESTING AND UEW_BUILD_TESTS)
     )
     target_link_libraries(uew_thermal_tests PRIVATE uew_core)
     add_test(NAME uew_thermal_tests COMMAND uew_thermal_tests)
+
+    add_executable(uew_parser_tests
+        tests/test_parsers.cpp
+    )
+    target_link_libraries(uew_parser_tests PRIVATE uew_core)
+    add_test(NAME uew_parser_tests COMMAND uew_parser_tests)
+    set_tests_properties(uew_parser_tests PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
 # ---------------------------------------------------------------------------

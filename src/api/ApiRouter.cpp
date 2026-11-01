@@ -1,5 +1,7 @@
 #include "ApiRouter.h"
 #include "core/thermal/ThermalVerification.h"
+#include "core/parsers/StlParser.h"
+#include "core/parsers/CsvParser.h"
 #include <chrono>
 #include <sstream>
 
@@ -17,6 +19,8 @@ void ApiRouter::register_routes(HttpServer& server) {
     server.set_route("GET", "/api/v1/thermal/solve", &ApiRouter::handle_thermal_solve);
     server.set_route("POST", "/api/v1/thermal/export", &ApiRouter::handle_thermal_export);
     server.set_route("GET", "/api/v1/thermal/export", &ApiRouter::handle_thermal_export);
+    server.set_route("POST", "/api/v1/geometry/parse-stl", &ApiRouter::handle_parse_stl);
+    server.set_route("POST", "/api/v1/data/parse-csv", &ApiRouter::handle_parse_csv);
 }
 
 HttpResponse ApiRouter::handle_health(const HttpRequest& /*req*/) {
@@ -247,6 +251,165 @@ HttpResponse ApiRouter::handle_thermal_export(const HttpRequest& req) {
         "attachment; filename=\"thermal_mesh_" + std::to_string(requested_elements) + "_" + export_type + ".csv\"";
     resp.body = csv_data;
     return resp;
+}
+
+static std::string extract_content(const HttpRequest& req) {
+    if (req.body.empty()) {
+        return "";
+    }
+    // Check if body is a JSON object with a "content" string field
+    const std::string& b = req.body;
+    size_t first = b.find_first_not_of(" \t\r\n");
+    if (first != std::string::npos && b[first] == '{') {
+        try {
+            Json j = Json::parse(b);
+            if (j.is_object() && j.contains("content") && j["content"].is_string()) {
+                return j["content"].as_string();
+            }
+        } catch (...) {
+            // Not valid JSON, treat as raw content
+        }
+    }
+    return req.body;
+}
+
+HttpResponse ApiRouter::handle_parse_stl(const HttpRequest& req) {
+    std::string content = extract_content(req);
+    if (content.empty()) {
+        return HttpResponse::error_json(400, "Bad Request", "STL content payload is empty.");
+    }
+
+    uew::parsers::StlModel model;
+    try {
+        model = uew::parsers::StlParser::parse_ascii(content);
+    } catch (const std::invalid_argument& e) {
+        return HttpResponse::error_json(400, "STL Parsing Error", e.what());
+    } catch (const std::exception& e) {
+        return HttpResponse::error_json(500, "Internal Server Error", e.what());
+    }
+
+    Json root;
+    root["status"] = "ok";
+    root["solid_name"] = model.solid_name;
+    root["triangle_count"] = static_cast<int64_t>(model.triangle_count);
+
+    Json bbox;
+    std::vector<Json> bbox_min{ model.bbox.min.x, model.bbox.min.y, model.bbox.min.z };
+    std::vector<Json> bbox_max{ model.bbox.max.x, model.bbox.max.y, model.bbox.max.z };
+    std::vector<Json> bbox_dim{
+        model.bbox.max.x - model.bbox.min.x,
+        model.bbox.max.y - model.bbox.min.y,
+        model.bbox.max.z - model.bbox.min.z
+    };
+    bbox["min"] = bbox_min;
+    bbox["max"] = bbox_max;
+    bbox["dimensions"] = bbox_dim;
+    root["bbox"] = bbox;
+
+    size_t recomputed_count = 0;
+    std::vector<Json> positions;
+    positions.reserve(model.triangles.size() * 9);
+    std::vector<Json> normals;
+    normals.reserve(model.triangles.size() * 9);
+
+    for (const auto& tri : model.triangles) {
+        if (tri.normal_recomputed) ++recomputed_count;
+
+        positions.emplace_back(tri.v1.x);
+        positions.emplace_back(tri.v1.y);
+        positions.emplace_back(tri.v1.z);
+
+        positions.emplace_back(tri.v2.x);
+        positions.emplace_back(tri.v2.y);
+        positions.emplace_back(tri.v2.z);
+
+        positions.emplace_back(tri.v3.x);
+        positions.emplace_back(tri.v3.y);
+        positions.emplace_back(tri.v3.z);
+
+        for (int i = 0; i < 3; ++i) {
+            normals.emplace_back(tri.normal.x);
+            normals.emplace_back(tri.normal.y);
+            normals.emplace_back(tri.normal.z);
+        }
+    }
+
+    root["positions"] = positions;
+    root["normals"] = normals;
+    root["normals_recomputed_count"] = static_cast<int64_t>(recomputed_count);
+
+    Json units;
+    units["position"] = "m";
+    root["units"] = units;
+
+    return HttpResponse::ok_json(root);
+}
+
+HttpResponse ApiRouter::handle_parse_csv(const HttpRequest& req) {
+    std::string content = extract_content(req);
+    if (content.empty()) {
+        return HttpResponse::error_json(400, "Bad Request", "CSV content payload is empty.");
+    }
+
+    uew::parsers::TemperatureDataset dataset;
+    try {
+        dataset = uew::parsers::CsvParser::parse_csv(content);
+    } catch (const std::invalid_argument& e) {
+        return HttpResponse::error_json(400, "CSV Parsing Error", e.what());
+    } catch (const std::exception& e) {
+        return HttpResponse::error_json(500, "Internal Server Error", e.what());
+    }
+
+    Json root;
+    root["status"] = "ok";
+    root["node_count"] = static_cast<int64_t>(dataset.node_count);
+    root["is_synthetic"] = dataset.is_synthetic;
+    root["provenance"] = dataset.provenance;
+
+    Json bbox;
+    std::vector<Json> bbox_min{ dataset.bbox.min.x, dataset.bbox.min.y, dataset.bbox.min.z };
+    std::vector<Json> bbox_max{ dataset.bbox.max.x, dataset.bbox.max.y, dataset.bbox.max.z };
+    std::vector<Json> bbox_dim{
+        dataset.bbox.max.x - dataset.bbox.min.x,
+        dataset.bbox.max.y - dataset.bbox.min.y,
+        dataset.bbox.max.z - dataset.bbox.min.z
+    };
+    bbox["min"] = bbox_min;
+    bbox["max"] = bbox_max;
+    bbox["dimensions"] = bbox_dim;
+    root["bbox"] = bbox;
+
+    Json stats;
+    stats["min_temperature_C"] = dataset.min_temperature_C;
+    stats["max_temperature_C"] = dataset.max_temperature_C;
+    stats["avg_temperature_C"] = dataset.avg_temperature_C;
+    root["temperature_stats"] = stats;
+
+    std::vector<Json> node_ids;
+    node_ids.reserve(dataset.nodes.size());
+    std::vector<Json> positions;
+    positions.reserve(dataset.nodes.size() * 3);
+    std::vector<Json> temperatures;
+    temperatures.reserve(dataset.nodes.size());
+
+    for (const auto& n : dataset.nodes) {
+        node_ids.emplace_back(n.node_id);
+        positions.emplace_back(n.x_m);
+        positions.emplace_back(n.y_m);
+        positions.emplace_back(n.z_m);
+        temperatures.emplace_back(n.temperature_C);
+    }
+
+    root["node_ids"] = node_ids;
+    root["positions"] = positions;
+    root["temperatures_C"] = temperatures;
+
+    Json units;
+    units["position"] = "m";
+    units["temperature"] = "degC";
+    root["units"] = units;
+
+    return HttpResponse::ok_json(root);
 }
 
 } // namespace uew::api

@@ -83,6 +83,20 @@ static std::string http_get(int port, const std::string& path, const std::string
     return http_raw_exchange(port, req.str());
 }
 
+static std::string http_post(int port, const std::string& path, const std::string& body, const std::string& token = "", const std::string& content_type = "text/plain") {
+    std::ostringstream req;
+    req << "POST " << path << " HTTP/1.1\r\n";
+    req << "Host: 127.0.0.1:" << port << "\r\n";
+    if (!token.empty()) {
+        req << "X-Session-Token: " << token << "\r\n";
+    }
+    req << "Content-Type: " << content_type << "\r\n";
+    req << "Content-Length: " << body.size() << "\r\n";
+    req << "Connection: close\r\n\r\n";
+    req << body;
+    return http_raw_exchange(port, req.str());
+}
+
 void test_json_roundtrip() {
     Json root;
     root["name"] = "UnifiedEngineeringWorkbench";
@@ -398,6 +412,85 @@ void test_api_lifecycle_and_validation() {
         std::string resp2 = http_get(port, "/api/v1/thermal/export?elements=80", "");
         TEST_ASSERT(resp2.find("401 Unauthorized") != std::string::npos, "Unauthenticated export returns 401");
         std::cout << "PASS: Unauthenticated requests to thermal endpoints strictly rejected with 401 Unauthorized." << std::endl;
+    }
+
+    // Test D13: Geometry parse-stl endpoint (POST /api/v1/geometry/parse-stl)
+    {
+        const std::string valid_stl =
+            "solid box\n"
+            "  facet normal 0.0 0.0 1.0\n"
+            "    outer loop\n"
+            "      vertex 0.0 0.0 0.0\n"
+            "      vertex 1.0 0.0 0.0\n"
+            "      vertex 0.0 1.0 0.0\n"
+            "    endloop\n"
+            "  endfacet\n"
+            "endsolid box\n";
+        std::string resp = http_post(port, "/api/v1/geometry/parse-stl", valid_stl, test_token);
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Parse-stl returns 200 OK");
+        TEST_ASSERT(resp.find("\"solid_name\":\"box\"") != std::string::npos, "Parse-stl solid_name");
+        TEST_ASSERT(resp.find("\"triangle_count\":1") != std::string::npos, "Parse-stl triangle_count");
+        TEST_ASSERT(resp.find("\"positions\":[") != std::string::npos, "Parse-stl contains positions array");
+        TEST_ASSERT(resp.find("\"normals\":[") != std::string::npos, "Parse-stl contains normals array");
+        std::cout << "PASS: Geometry parse-stl endpoint verified with 200 OK and BufferGeometry data." << std::endl;
+    }
+
+    // Test D14: Geometry parse-stl rejected on binary data (400 Bad Request)
+    {
+        std::string fake_binary(128, '\0');
+        fake_binary[0] = 's'; fake_binary[1] = 'o'; fake_binary[2] = 'l'; fake_binary[3] = 'i'; fake_binary[4] = 'd';
+        std::string resp = http_post(port, "/api/v1/geometry/parse-stl", fake_binary, test_token);
+        TEST_ASSERT(resp.find("400 Bad Request") != std::string::npos, "Binary STL returns 400 Bad Request");
+        TEST_ASSERT(resp.find("Binary STL detected") != std::string::npos, "Binary STL diagnostic error");
+        std::cout << "PASS: Geometry parse-stl rejected binary data with 400 Bad Request." << std::endl;
+    }
+
+    // Test D15: Geometry parse-stl rejected on 0-triangle STL (400 Bad Request)
+    {
+        std::string empty_stl = "solid empty\nendsolid empty\n";
+        std::string resp = http_post(port, "/api/v1/geometry/parse-stl", empty_stl, test_token);
+        TEST_ASSERT(resp.find("400 Bad Request") != std::string::npos, "0-triangle STL returns 400 Bad Request");
+        TEST_ASSERT(resp.find("0 triangles") != std::string::npos, "0-triangle diagnostic error");
+        std::cout << "PASS: Geometry parse-stl rejected 0-triangle STL with 400 Bad Request." << std::endl;
+    }
+
+    // Test D16: Data parse-csv endpoint (POST /api/v1/data/parse-csv)
+    {
+        const std::string valid_csv =
+            "# Provenance: Synthetic analytical distribution\n"
+            "node_id,x_m,y_m,z_m,temperature_C\n"
+            "1,0.0,0.0,0.0,25.0\n"
+            "2,0.1,0.0,0.0,35.0\n"
+            "3,0.1,0.05,0.02,45.0\n";
+        std::string resp = http_post(port, "/api/v1/data/parse-csv", valid_csv, test_token);
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Parse-csv returns 200 OK");
+        TEST_ASSERT(resp.find("\"node_count\":3") != std::string::npos, "Parse-csv node_count");
+        TEST_ASSERT(resp.find("\"is_synthetic\":true") != std::string::npos, "Parse-csv synthetic detection");
+        TEST_ASSERT(resp.find("\"min_temperature_C\":25") != std::string::npos, "Parse-csv min temp");
+        TEST_ASSERT(resp.find("\"node_ids\":[") != std::string::npos, "Parse-csv contains node_ids array");
+        TEST_ASSERT(resp.find("\"positions\":[") != std::string::npos, "Parse-csv contains positions array");
+        TEST_ASSERT(resp.find("\"temperatures_C\":[") != std::string::npos, "Parse-csv contains temperatures array");
+        std::cout << "PASS: Data parse-csv endpoint verified with 200 OK and statistics." << std::endl;
+    }
+
+    // Test D17: Data parse-csv rejected on unphysical temperature (400 Bad Request)
+    {
+        const std::string bad_csv =
+            "node_id,x_m,y_m,z_m,temperature_C\n"
+            "1,0.0,0.0,0.0,-300.0\n";
+        std::string resp = http_post(port, "/api/v1/data/parse-csv", bad_csv, test_token);
+        TEST_ASSERT(resp.find("400 Bad Request") != std::string::npos, "Unphysical temp returns 400 Bad Request");
+        TEST_ASSERT(resp.find("absolute zero") != std::string::npos, "Diagnostic error for absolute zero violation");
+        std::cout << "PASS: Data parse-csv rejected unphysical temperature with 400 Bad Request." << std::endl;
+    }
+
+    // Test D18: Unauthenticated Parser Endpoints -> Expect 401 Unauthorized
+    {
+        std::string resp1 = http_post(port, "/api/v1/geometry/parse-stl", "solid x\nendsolid x\n", "");
+        TEST_ASSERT(resp1.find("401 Unauthorized") != std::string::npos, "Unauthenticated parse-stl returns 401");
+        std::string resp2 = http_post(port, "/api/v1/data/parse-csv", "dummy", "");
+        TEST_ASSERT(resp2.find("401 Unauthorized") != std::string::npos, "Unauthenticated parse-csv returns 401");
+        std::cout << "PASS: Unauthenticated requests to parsing endpoints strictly rejected with 401 Unauthorized." << std::endl;
     }
 
     // Test E: Invalid Request Line (only 2 tokens) -> Expect 400 Bad Request
