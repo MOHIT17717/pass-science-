@@ -6,6 +6,8 @@ import { GeometryWorkspace } from './features/geometry/GeometryWorkspace';
 import { TemperatureWorkspace } from './features/temperature/TemperatureWorkspace';
 import { ThermalWorkspace } from './features/thermal/ThermalWorkspace';
 import { PerformanceWorkspace } from './features/performance/PerformanceWorkspace';
+import { HardwareWorkspace } from './features/hardware/HardwareWorkspace';
+import { BackpropWorkspace } from './features/backprop/BackpropWorkspace';
 import type { BackendStatus } from '../../electron/preload/api';
 import type { StlModelData, GeometryViewOptions } from './types/geometry';
 import type { TemperatureDatasetData, TemperatureViewOptions, InspectedNode } from './types/temperature';
@@ -398,22 +400,15 @@ export const App: React.FC = () => {
           <div style={{ flex: 1, width: '100%', overflowY: 'auto' }}>
             <PerformanceWorkspace />
           </div>
-        ) : (
-          <div style={{ padding: '32px', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
-            {activeTab === 'hardware' && (
-              <div>
-                <h2>4. Embedded System Hardware Integration</h2>
-                <p style={{ color: '#aaa' }}>Microcontroller, FPGA, and JTAG simulation adapters.</p>
-              </div>
-            )}
-            {activeTab === 'backprop' && (
-              <div>
-                <h2>5. Manual Backpropagation Neural Network</h2>
-                <p style={{ color: '#aaa' }}>Analytical gradient calculation and 100-step training history.</p>
-              </div>
-            )}
+        ) : activeTab === 'hardware' ? (
+          <div style={{ flex: 1, width: '100%', overflowY: 'auto' }}>
+            <HardwareWorkspace />
           </div>
-        )}
+        ) : activeTab === 'backprop' ? (
+          <div style={{ flex: 1, width: '100%', overflowY: 'auto' }}>
+            <BackpropWorkspace />
+          </div>
+        ) : null}
       </main>
 
       {/* Bottom Status Bar */}

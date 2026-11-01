@@ -21,13 +21,13 @@ The assignment PDF remains authoritative. This matrix is a project implementatio
 | D: 1/2/up to 4 workers and reproducibility | Bounded C++ pool, deterministic ordering, and <=1e-8 °C agreement | 10 | `uew_benchmark_tests`, `test_api` benchmark routes, numerical verification table |
 | D: five repetitions, median, speedup, efficiency | C++ benchmark harness and SVG speedup/efficiency chart | 10 | `src/core/benchmark/BenchmarkHarness.cpp`, `BenchmarkChart.tsx`, CSV export |
 | D: hardware/compiler/workload disclosure | Dynamic Win32 runtime hardware & build query | 10, 18 | `src/core/benchmark/EnvironmentHelper.cpp`, hardware disclosure card, technical report |
-| E: MCU, FPGA, JTAG design and electrical safety | Diagram/table and C++ simulated adapters | 15 | Diagram, interface table, mock tests |
-| E: recoverable timeout and simulated labels | Mock adapter error handling and React status | 15, 17 | Failure test and UI evidence |
-| F: manual backpropagation | C++ implementation, no autodiff | 16 | Hand calculation and unit tests |
-| F: finite-difference check <=1e-5 | C++ gradient verification | 16 | Automated test output |
-| F: 100-step loss plot | C++ history, React chart | 16 | CSV and chart |
-| Rubric: interface/design | React/Electron UX | 08–10, 17 | Walkthrough |
-| Rubric: C++ backend/testing | C++ core, API and tests | 03, 05–07, 11–17 | CTest and code review |
+| E: MCU, FPGA, JTAG design and electrical safety | System block diagram, interface pinout table, and C++ deterministic simulation adapters (STM32 Nucleo MCU, Basys 3 FPGA, SEGGER J-Link) | 11 | `src/core/embedded/`, `SystemBlockDiagram.tsx`, `InterfaceTable.tsx`, `uew_embedded_tests` (78 assertions), `hardware_integration_view.png` |
+| E: recoverable timeout and simulated labels | Immediate non-blocking timeout (HTTP 504), failure isolation, pre-fault state preservation, and prominent simulation disclosures | 11 | `EmbeddedController.cpp`, `test_api` D25-D27, `HardwareWorkspace.tsx`, ADR-012 |
+| F: manual backpropagation | Pure C++17 manual engine (zero ML frameworks), analytical chain rule gradients, simultaneous parameter updates, initial evaluation (J0=1.182542) | 11 | `src/core/backprop/BackpropEngine.cpp`, `uew_backprop_tests` (36 assertions), `BackpropWorkspace.tsx`, ADR-013 |
+| F: finite-difference check <=1e-5 | Central difference gradient check (epsilon=10^-6, observed error 1.13e-10 <= 10^-5) across all 4 parameters | 11 | `test_backprop.cpp`, `test_api` D28, `BackpropWorkspace.tsx` gradient check table |
+| F: 100-step loss plot and CSV export | Strict monotonic loss descent to J100 < 10^-6, 101-row RFC 4180 CSV export, pure-React SVG LossChart, and 2-page appendix reference guide | 11 | `LossChart.tsx`, `HandwrittenAppendixGuide.tsx`, `test_api` D29, `backpropagation_results_view.png` |
+| Rubric: interface/design | React/Electron UX | 08–11, 12 | Walkthrough, screenshots (cad, temp, overlay, node, thermal, perf, hardware, backprop) |
+| Rubric: C++ backend/testing | C++ core, API and tests | 03, 05–07, 10, 11, 12 | 7/7 CTest suites passed, 46 API tests passed, code review |
 | Rubric: architecture/readability/version control | Modular repo, documentation, Git history | 02–05, 17–18 | Repository and commit history |
 | Rubric: one-click delivery/report/AI judgement | Packaging, evidence and disclosure | 18 | ZIP, report, AI log, clean-machine evidence |
 

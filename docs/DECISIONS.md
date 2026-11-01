@@ -76,3 +76,44 @@ Assignment Requirement D mandates serial baseline vs. CPU-parallel batch solves 
 4. **Isolated Compute Wall-Time**: Timing is recorded with `std::chrono::steady_clock` (backed by Windows `QueryPerformanceCounter`, $\approx 100\ \text{ns}$ resolution). Thread spawn, execution, and join are included in the measured parallel interval; workload generation, JSON parsing/serialization, and UI dispatch are strictly excluded.
 5. **Runtime Hardware Disclosure**: Processor model (brand string via `__cpuid`), core counts (`hardware_concurrency` and Win32 `RelationProcessorCore`), physical RAM (`GlobalMemoryStatusEx`), and compiler flags (`_MSC_FULL_VER`, Release `/O2`) are dynamically queried in C++ rather than hardcoded.
 6. **Pure-React SVG Benchmark Chart (`BenchmarkChart.tsx`)**: Visualizes measured speedup and parallel efficiency against ideal linear scaling with hover tooltips and dual mode toggles, requiring zero third-party chart dependencies.
+
+## ADR-012 — Host-Side Embedded System Simulation Architecture
+**Status:** Accepted.
+**Context:**
+Assignment Requirement E mandates embedded system integration representing a microcontroller, an FPGA, and a JTAG debug probe with device state lifecycle, deterministic telemetry readouts, fault injection, and isolated recovery. Real physical hardware (cables, boards, firmware flashing) is outside project scope.
+**Decision:**
+1. **Pure Host-Side C++17 Simulation Core**: Implement `IDeviceAdapter` interface and three deterministic mock adapters (`MockMcuAdapter`, `MockFpgaAdapter`, `MockJtagAdapter`) supervised by thread-safe `EmbeddedController`.
+2. **Prominent Simulation Disclosure**: Every API payload (`"is_simulated": true`) and UI workspace view prominently displays `[SIMULATED HOST-SIDE HARDWARE — NO PHYSICAL CONNECTION REQUIRED]`.
+3. **Single Reference Targets & Board Accuracy**:
+   - **MCU**: STMicroelectronics NUCLEO-F401RE (STM32F401RET6, ARM Cortex-M4 @ 84 MHz). Headers are ST Morpho (CN7, CN10) and Arduino Uno R3; documentation explicitly clarifies that native Digilent Pmod headers are NOT present on the Nucleo board.
+   - **FPGA**: Digilent Basys 3 (Xilinx Artix-7 XC7A35T-1CPG236C). Power rails: $V_{CCINT} = 1.00\ \text{V}$, $V_{CCAUX} = 1.80\ \text{V}$, $V_{CCO} = 3.30\ \text{V}$. Connectors: 4x 12-pin Pmod (JA..).
+   - **JTAG**: SEGGER J-Link BASE (Simulated external debug probe). Senses $V_{\text{Tref}} = 3.30\ \text{V}$, TCK = 4.0 MHz.
+4. **Rigorous Interconnect Disclosures**:
+   - **MCU-to-FPGA UART Link**: Designated as a *proposed custom interconnect* (conceptual pin mapping: Nucleo CN7 Pin 1 PA9 TX $\to$ Basys 3 Pmod JA Pin 2 RX; CN7 Pin 21 PA10 RX $\leftarrow$ Basys 3 Pmod JA Pin 3 TX; CN7 Pin 20 $\leftrightarrow$ Pmod JA Pin 5 GND). Marked as unverified physical routing. Direct 3.3V CMOS compatibility confirmed without active level shifter.
+   - **JTAG Daisy Chain**: Designated as an *illustrative custom test topology* only. Documentation explicitly notes that Basys 3 incorporates an onboard FTDI FT2232HQ USB-JTAG bridge and Nucleo incorporates an onboard ST-LINK/SWD bridge; a unified external J-Link daisy chain is an illustrative test configuration.
+5. **Non-Blocking Simulated Timeout**: Thread sleeping (`sleep_for(3000ms)`) is strictly forbidden. A timeout fault is modeled as an immediate state-based rejection returning HTTP 504 Gateway Timeout with `{"error_code":"COMMUNICATION_TIMEOUT","recoverable":true,"status":"error"}`.
+6. **Pre-Fault State Preservation & Failure Isolation**:
+   - Clearing a fault strictly restores `pre_fault_state_`. If a device was disconnected before fault injection, clearing the fault leaves it in the `DISCONNECTED` state; it is NEVER silently auto-connected.
+   - Device fault isolation is enforced: a fault on the MCU does not degrade or block telemetry on the FPGA or JTAG adapters.
+
+## ADR-013 — Manual Backpropagation Neural Network Engine
+**Status:** Accepted.
+**Context:**
+Assignment Requirement F mandates manual analytical backpropagation for a 1-hidden-node neural network ($x=1.0, y=2.0, \eta=0.1, w_0=0.5, b_0=0.0, v_0=1.0, c_0=0.0$), finite-difference gradient checking ($\epsilon=10^{-6}$, max error $\le 10^{-5}$), simultaneous parameter updates, 100-step training loop with monotonic descent, and 101-row RFC 4180 CSV export.
+**Decision:**
+1. **Zero ML Frameworks / Autograd**: All forward passes, analytical gradients, parameter updates, and gradient checks are implemented in pure manual C++17 (`BackpropEngine`), with zero dependency on PyTorch, TensorFlow, libtorch, or autograd libraries.
+2. **Network Topology & Analytical Gradients**:
+   - Forward: $z = w \cdot x + b$, $h = \tanh(z)$, $\hat{y} = v \cdot h + c$, $e = \hat{y} - y$, $J = \frac{1}{2} e^2$.
+   - Exact Step 0 Evaluation: $z_0 = 0.500000$, $h_0 \approx 0.462117$, $\hat{y}_0 \approx 0.462117$, $e_0 \approx -1.537883$, $J_0 \approx 1.182542$.
+   - Analytical Gradients: $\frac{\partial J}{\partial c} = e \approx -1.537883$, $\frac{\partial J}{\partial v} = e \cdot h \approx -0.710682$, $\frac{\partial J}{\partial b} = e \cdot v \cdot (1 - h^2) \approx -1.209464$, $\frac{\partial J}{\partial w} = e \cdot v \cdot (1 - h^2) \cdot x \approx -1.209464$.
+3. **Finite-Difference Gradient Checking**:
+   - Central difference: $\frac{\partial J}{\partial \theta} \approx \frac{J(\theta + \epsilon) - J(\theta - \epsilon)}{2\epsilon}$ with $\epsilon = 10^{-6}$.
+   - Maximum observed discrepancy across all 4 parameters is $\sim 1.13 \times 10^{-10}$, easily surpassing the required $\le 10^{-5}$ threshold.
+4. **Simultaneous Parameter Updates**:
+   - Parameters are strictly updated simultaneously: $\theta^{(1)} = \theta^{(0)} - \eta \nabla_\theta J|_{\theta^{(0)}}$.
+   - Evaluated at Step 1: $w_1 \approx 0.620946$, $b_1 \approx 0.120946$, $v_1 \approx 1.071068$, $c_1 \approx 0.153788$.
+   - New Step 1 loss: $J_1 \approx 0.685774$ (an immediate **-42.01%** loss drop).
+5. **100-Step Monotonic Training & 101-Row CSV Export**:
+   - Loss decreases strictly monotonically across 100 subsequent training steps down to $J_{100} < 10^{-6}$.
+   - RFC 4180 CSV export generates exactly 101 records (Step 0 to Step 100) with complete parameters, loss, prediction, and gradient records.
+6. **Frontend Integration**: Pure-React SVG `LossChart.tsx` renders the convergence trajectory with hover inspection, and `HandwrittenAppendixGuide.tsx` embeds the complete 2-page appendix derivations matching the assignment submission.

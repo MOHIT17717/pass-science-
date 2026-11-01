@@ -19,6 +19,17 @@ public:
     static HttpResponse handle_parse_csv(const HttpRequest& req);
     static HttpResponse handle_benchmark_run(const HttpRequest& req);
     static HttpResponse handle_benchmark_export(const HttpRequest& req);
+
+    // Embedded endpoints (Task 11)
+    static HttpResponse handle_embedded_devices(const HttpRequest& req);
+    static HttpResponse handle_embedded_connect(const HttpRequest& req);
+    static HttpResponse handle_embedded_disconnect(const HttpRequest& req);
+    static HttpResponse handle_embedded_telemetry(const HttpRequest& req);
+    static HttpResponse handle_embedded_fault(const HttpRequest& req);
+
+    // Backpropagation endpoints (Task 11)
+    static HttpResponse handle_backprop_train(const HttpRequest& req);
+    static HttpResponse handle_backprop_export(const HttpRequest& req);
 };
 
 } // namespace uew::api

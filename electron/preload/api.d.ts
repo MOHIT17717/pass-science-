@@ -120,6 +120,169 @@ export interface BenchmarkSuiteResponse {
   details?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Embedded System Integration DTOs (Task 11)
+// ---------------------------------------------------------------------------
+
+export type DeviceStateDTO = 'disconnected' | 'connected' | 'faulted';
+
+export interface HardwareCapabilitiesDTO {
+  supported_protocols: string[];
+  voltage_rails: string[];
+  target_interfaces: string[];
+  jtag_role: string;
+  interconnect_note: string;
+}
+
+export interface DeviceInfoDTO {
+  id: string;
+  name: string;
+  category: string;
+  target_silicon: string;
+  description: string;
+  host_interface: string;
+  power_domains: string;
+  physical_connectors: string;
+  state: DeviceStateDTO;
+  is_simulated: boolean;
+  capabilities: HardwareCapabilitiesDTO;
+}
+
+export interface EmbeddedDevicesResponse {
+  status: 'ok' | 'error';
+  is_simulated?: boolean;
+  disclaimer?: string;
+  devices?: DeviceInfoDTO[];
+  error?: string;
+  details?: string;
+}
+
+export interface DeviceConnectionResponse {
+  status: 'ok' | 'error';
+  device_id?: string;
+  state?: DeviceStateDTO;
+  is_simulated?: boolean;
+  error?: string;
+  error_code?: string;
+  message?: string;
+  recoverable?: boolean;
+}
+
+export interface DeviceTelemetryDTO {
+  device_id: string;
+  timestamp_ms: number;
+  is_simulated: boolean;
+  numeric_metrics: Record<string, number>;
+  text_metrics: Record<string, string>;
+}
+
+export interface DeviceTelemetryResponse {
+  status: 'ok' | 'error';
+  device_id?: string;
+  timestamp_ms?: number;
+  is_simulated?: boolean;
+  numeric_metrics?: Record<string, number>;
+  text_metrics?: Record<string, string>;
+  telemetry?: Array<{
+    success: boolean;
+    device_id: string;
+    timestamp_ms?: number;
+    numeric_metrics?: Record<string, number>;
+    text_metrics?: Record<string, string>;
+    error_code?: string;
+    message?: string;
+    recoverable?: boolean;
+  }>;
+  error?: string;
+  error_code?: string;
+  message?: string;
+  recoverable?: boolean;
+}
+
+export interface DeviceFaultResponse {
+  status: 'ok' | 'error';
+  device_id?: string;
+  action?: string;
+  state?: DeviceStateDTO;
+  is_simulated?: boolean;
+  error?: string;
+  details?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Backpropagation DTOs (Task 11)
+// ---------------------------------------------------------------------------
+
+export interface ForwardStateDTO {
+  x: number;
+  y: number;
+  z: number;
+  h: number;
+  y_hat: number;
+  error: number;
+  loss: number;
+}
+
+export interface GradientsDTO {
+  dJ_dw: number;
+  dJ_db: number;
+  dJ_dv: number;
+  dJ_dc: number;
+}
+
+export interface ModelParametersDTO {
+  w: number;
+  b: number;
+  v: number;
+  c: number;
+}
+
+export interface SingleGradientCheckDTO {
+  parameter: string;
+  analytical_gradient: number;
+  numerical_gradient: number;
+  absolute_error: number;
+  passed: boolean;
+}
+
+export interface GradientCheckReportDTO {
+  epsilon: number;
+  tolerance: number;
+  max_absolute_error: number;
+  all_passed: boolean;
+  checks: SingleGradientCheckDTO[];
+}
+
+export interface TrainingRecordDTO {
+  step: number;
+  loss: number;
+  y_hat: number;
+  w: number;
+  b: number;
+  v: number;
+  c: number;
+  grad_w: number;
+  grad_b: number;
+  grad_v: number;
+  grad_c: number;
+}
+
+export interface BackpropTrainResponse {
+  status: 'ok' | 'error';
+  summary?: string;
+  monotonic_loss_reduction?: boolean;
+  final_loss_converged?: boolean;
+  initial_forward?: ForwardStateDTO;
+  initial_gradients?: GradientsDTO;
+  step1_parameters?: ModelParametersDTO;
+  step1_forward?: { y_hat: number; loss: number };
+  gradient_check?: GradientCheckReportDTO;
+  history?: TrainingRecordDTO[];
+  total_records?: number;
+  error?: string;
+  details?: string;
+}
+
 export interface WorkbenchAPI {
   getBackendStatus: () => Promise<BackendStatus>;
   onBackendStatusChange: (callback: (status: BackendStatus) => void) => () => void;
@@ -132,5 +295,13 @@ export interface WorkbenchAPI {
   saveCsvFile: (defaultFilename: string, content: string) => Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }>;
   runBenchmark: (config?: Partial<BenchmarkConfigDTO>) => Promise<BenchmarkSuiteResponse>;
   exportBenchmarkCsv: (config?: Partial<BenchmarkConfigDTO>) => Promise<{ status: 'ok' | 'error'; csv?: string; error?: string; rowCount?: number }>;
+  // Task 11 APIs
+  getEmbeddedDevices: () => Promise<EmbeddedDevicesResponse>;
+  connectEmbeddedDevice: (deviceId: string) => Promise<DeviceConnectionResponse>;
+  disconnectEmbeddedDevice: (deviceId: string) => Promise<DeviceConnectionResponse>;
+  getEmbeddedTelemetry: (deviceId?: string) => Promise<DeviceTelemetryResponse>;
+  injectEmbeddedFault: (deviceId: string, action: 'inject_timeout' | 'clear_fault') => Promise<DeviceFaultResponse>;
+  runBackpropTrain: (steps?: number, learningRate?: number) => Promise<BackpropTrainResponse>;
+  exportBackpropCsv: (steps?: number) => Promise<{ status: 'ok' | 'error'; csv?: string; error?: string; rowCount?: number }>;
 }
 

@@ -177,7 +177,17 @@ void test_api_lifecycle_and_validation() {
     std::cout << "INFO: Dynamic loopback port assigned: " << port << std::endl;
 
     // Test A: Request BEFORE token initialization -> Expect 503 Service Unavailable
-    std::string resp_pre_init = http_get(port, "/api/v1/health", test_token);
+    // Synchronize deterministically on server socket readiness using bounded polling (max 50 attempts x 2ms = 100ms bound)
+    std::string resp_pre_init;
+    constexpr int MAX_READINESS_ATTEMPTS = 50;
+    for (int attempt = 0; attempt < MAX_READINESS_ATTEMPTS; ++attempt) {
+        resp_pre_init = http_get(port, "/api/v1/health", test_token);
+        if (!resp_pre_init.empty()) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    TEST_ASSERT(!resp_pre_init.empty(), "Server responded within bounded readiness window");
     TEST_ASSERT(resp_pre_init.find("503 Service Unavailable") != std::string::npos, "Pre-handshake returns 503");
     std::cout << "PASS: Pre-handshake request returned 503 Service Unavailable." << std::endl;
 
@@ -534,6 +544,128 @@ void test_api_lifecycle_and_validation() {
         TEST_ASSERT(resp2.find("401 Unauthorized") != std::string::npos, "Unauthenticated benchmark export returns 401");
         std::cout << "PASS: Unauthenticated requests to benchmark endpoints strictly rejected with 401 Unauthorized." << std::endl;
     }
+    // Test D23: Embedded Devices Discovery (GET /api/v1/embedded/devices)
+    {
+        std::string resp = http_get(port, "/api/v1/embedded/devices", test_token);
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Embedded devices returns 200 OK");
+        TEST_ASSERT(resp.find("\"is_simulated\":true") != std::string::npos, "Discloses simulation");
+        TEST_ASSERT(resp.find("SIMULATED HOST-SIDE HARDWARE") != std::string::npos, "Simulation disclaimer present");
+        TEST_ASSERT(resp.find("\"id\":\"mcu\"") != std::string::npos, "MCU device present");
+        TEST_ASSERT(resp.find("\"id\":\"fpga\"") != std::string::npos, "FPGA device present");
+        TEST_ASSERT(resp.find("\"id\":\"jtag\"") != std::string::npos, "JTAG device present");
+        std::cout << "PASS: Embedded devices discovery verified with 200 OK and 3 simulated devices." << std::endl;
+    }
+
+    // Test D24: Embedded Connect & Disconnect (POST /api/v1/embedded/connect, disconnect)
+    {
+        std::string resp_conn = http_post(port, "/api/v1/embedded/connect", "{\"device_id\":\"mcu\"}", test_token);
+        TEST_ASSERT(resp_conn.find("200 OK") != std::string::npos, "Connect MCU returns 200 OK");
+        TEST_ASSERT(resp_conn.find("\"state\":\"connected\"") != std::string::npos, "MCU state is connected");
+
+        // 404 on unknown device
+        std::string resp_404 = http_post(port, "/api/v1/embedded/connect", "{\"device_id\":\"unknown_dev\"}", test_token);
+        TEST_ASSERT(resp_404.find("404 Not Found") != std::string::npos, "Unknown device connect returns 404 Not Found");
+
+        // Disconnect
+        std::string resp_disc = http_post(port, "/api/v1/embedded/disconnect", "{\"device_id\":\"mcu\"}", test_token);
+        TEST_ASSERT(resp_disc.find("200 OK") != std::string::npos, "Disconnect MCU returns 200 OK");
+        TEST_ASSERT(resp_disc.find("\"state\":\"disconnected\"") != std::string::npos, "MCU state is disconnected");
+        std::cout << "PASS: Embedded connect and disconnect endpoints verified." << std::endl;
+    }
+
+    // Test D25: Embedded Telemetry (GET /api/v1/embedded/telemetry)
+    {
+        // Re-connect MCU
+        http_post(port, "/api/v1/embedded/connect", "{\"device_id\":\"mcu\"}", test_token);
+
+        std::string resp = http_get(port, "/api/v1/embedded/telemetry?device_id=mcu", test_token);
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Telemetry returns 200 OK");
+        TEST_ASSERT(resp.find("\"device_id\":\"mcu\"") != std::string::npos, "Telemetry device_id mcu");
+        TEST_ASSERT(resp.find("\"junction_temperature_C\":38.5") != std::string::npos, "Deterministic MCU temp 38.5 C");
+        TEST_ASSERT(resp.find("\"vdd_voltage_V\":3.3") != std::string::npos, "Deterministic MCU VDD 3.3V");
+        TEST_ASSERT(resp.find("\"is_simulated\":true") != std::string::npos, "Discloses telemetry is simulated");
+        std::cout << "PASS: Embedded telemetry verified with deterministic metrics." << std::endl;
+    }
+
+    // Test D26: Embedded Fault Injection and Recoverable Timeout (POST /api/v1/embedded/fault)
+    {
+        // Inject timeout on MCU
+        std::string resp_fault = http_post(port, "/api/v1/embedded/fault", "{\"device_id\":\"mcu\",\"action\":\"inject_timeout\"}", test_token);
+        TEST_ASSERT(resp_fault.find("200 OK") != std::string::npos, "Inject fault returns 200 OK");
+        TEST_ASSERT(resp_fault.find("\"state\":\"faulted\"") != std::string::npos, "MCU state is faulted");
+
+        // Query telemetry while faulted -> expect 504 Gateway Timeout
+        std::string resp_telem = http_get(port, "/api/v1/embedded/telemetry?device_id=mcu", test_token);
+        TEST_ASSERT(resp_telem.find("504 Gateway Timeout") != std::string::npos, "Faulted telemetry returns 504 Gateway Timeout");
+        TEST_ASSERT(resp_telem.find("COMMUNICATION_TIMEOUT") != std::string::npos, "Error code is COMMUNICATION_TIMEOUT");
+        TEST_ASSERT(resp_telem.find("\"recoverable\":true") != std::string::npos, "Timeout marked recoverable");
+
+        // Clear fault (recovery)
+        std::string resp_clear = http_post(port, "/api/v1/embedded/fault", "{\"device_id\":\"mcu\",\"action\":\"clear_fault\"}", test_token);
+        TEST_ASSERT(resp_clear.find("200 OK") != std::string::npos, "Clear fault returns 200 OK");
+        TEST_ASSERT(resp_clear.find("\"state\":\"connected\"") != std::string::npos, "MCU restored to connected state");
+
+        // Query telemetry after recovery -> 200 OK
+        std::string resp_telem_after = http_get(port, "/api/v1/embedded/telemetry?device_id=mcu", test_token);
+        TEST_ASSERT(resp_telem_after.find("200 OK") != std::string::npos, "Telemetry 200 OK after fault recovery");
+        std::cout << "PASS: Embedded fault injection and recoverable 504 timeout verified." << std::endl;
+    }
+
+    // Test D27: Manual Backpropagation Train (POST /api/v1/backprop/train)
+    {
+        std::string resp = http_post(port, "/api/v1/backprop/train", "{\"steps\":100,\"learning_rate\":0.1}", test_token);
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Backprop train returns 200 OK");
+        TEST_ASSERT(resp.find("\"status\":\"ok\"") != std::string::npos, "Status ok");
+        TEST_ASSERT(resp.find("\"monotonic_loss_reduction\":true") != std::string::npos, "Loss decreases monotonically");
+        TEST_ASSERT(resp.find("\"final_loss_converged\":true") != std::string::npos, "Final loss converges < 1e-6");
+        TEST_ASSERT(resp.find("\"all_passed\":true") != std::string::npos, "All gradient checks pass");
+        TEST_ASSERT(resp.find("\"total_records\":101") != std::string::npos, "History contains exactly 101 records");
+        std::cout << "PASS: Backpropagation train endpoint verified with gradient checks and 100-step convergence." << std::endl;
+    }
+
+    // Test D28: Manual Backpropagation Export CSV (POST /api/v1/backprop/export)
+    {
+        std::string resp = http_post(port, "/api/v1/backprop/export", "{\"steps\":100}", test_token);
+        TEST_ASSERT(resp.find("200 OK") != std::string::npos, "Backprop export returns 200 OK");
+        TEST_ASSERT(resp.find("Content-Type: text/csv; charset=utf-8") != std::string::npos, "Content-Type text/csv");
+        TEST_ASSERT(resp.find("# Model: Single-Neuron Regression") != std::string::npos, "CSV metadata comment present");
+        TEST_ASSERT(resp.find("step,loss,y_hat,w,b,v,c,grad_w,grad_b,grad_v,grad_c") != std::string::npos, "CSV header row present");
+        std::cout << "PASS: Backpropagation export endpoint verified with RFC 4180 CSV body." << std::endl;
+    }
+
+    // Test D29: Unauthenticated Embedded & Backprop Endpoints -> Expect 401 Unauthorized across all 7 endpoints
+    {
+        // 1. GET /api/v1/embedded/devices
+        std::string resp1 = http_get(port, "/api/v1/embedded/devices", "");
+        TEST_ASSERT(resp1.find("401 Unauthorized") != std::string::npos, "Unauthenticated embedded devices returns 401");
+
+        // 2. POST /api/v1/embedded/connect
+        std::string resp2 = http_post(port, "/api/v1/embedded/connect", "{\"device_id\":\"mcu\"}", "");
+        TEST_ASSERT(resp2.find("401 Unauthorized") != std::string::npos, "Unauthenticated embedded connect returns 401");
+
+        // 3. POST /api/v1/embedded/disconnect
+        std::string resp3 = http_post(port, "/api/v1/embedded/disconnect", "{\"device_id\":\"mcu\"}", "");
+        TEST_ASSERT(resp3.find("401 Unauthorized") != std::string::npos, "Unauthenticated embedded disconnect returns 401");
+
+        // 4. GET /api/v1/embedded/telemetry
+        std::string resp4 = http_get(port, "/api/v1/embedded/telemetry?device_id=mcu", "");
+        TEST_ASSERT(resp4.find("401 Unauthorized") != std::string::npos, "Unauthenticated embedded telemetry returns 401");
+
+        // 5. POST /api/v1/embedded/fault
+        std::string resp5 = http_post(port, "/api/v1/embedded/fault", "{\"device_id\":\"mcu\",\"action\":\"inject_timeout\"}", "");
+        TEST_ASSERT(resp5.find("401 Unauthorized") != std::string::npos, "Unauthenticated embedded fault returns 401");
+
+        // 6. POST /api/v1/backprop/train
+        std::string resp6 = http_post(port, "/api/v1/backprop/train", "{\"steps\":100,\"learning_rate\":0.1}", "");
+        TEST_ASSERT(resp6.find("401 Unauthorized") != std::string::npos, "Unauthenticated backprop train returns 401");
+
+        // 7. POST /api/v1/backprop/export
+        std::string resp7 = http_post(port, "/api/v1/backprop/export", "{\"steps\":100}", "");
+        TEST_ASSERT(resp7.find("401 Unauthorized") != std::string::npos, "Unauthenticated backprop export returns 401");
+
+        std::cout << "PASS: Unauthenticated requests to all 7 Task 11 endpoints strictly rejected with 401 Unauthorized." << std::endl;
+    }
+
 
     // Test E: Invalid Request Line (only 2 tokens) -> Expect 400 Bad Request
     std::string resp_bad_line = http_raw_exchange(port, "GET /api/v1/health\r\nHost: 127.0.0.1\r\n\r\n");

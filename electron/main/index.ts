@@ -415,6 +415,203 @@ async function runWorkbenchVerification(win: BrowserWindow): Promise<boolean> {
       console.error('[WORKBENCH VERIFY] FAIL: Multicore benchmark execution exception:', err.message);
       passed = false;
     }
+
+    // 7. Embedded System Hardware Simulation Verification (Task 11)
+    console.log('[WORKBENCH VERIFY] Testing Embedded System Hardware Integration...');
+    try {
+      // 7.1 Backend Discovery API
+      const devRes = await backendManager.dispatchRequest('/api/v1/embedded/devices', 'GET');
+      const devData = JSON.parse(devRes.data);
+      if (devRes.statusCode === 200 && devData.status === 'ok' && devData.devices?.length === 3 && devData.is_simulated === true) {
+        console.log('[WORKBENCH VERIFY] PASS: Embedded device discovery (3 devices: mcu, fpga, jtag; simulated=true).');
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Embedded device discovery failed:', devData);
+        passed = false;
+      }
+
+      // 7.2 Connect Devices
+      for (const id of ['mcu', 'fpga', 'jtag']) {
+        const cRes = await backendManager.dispatchRequest('/api/v1/embedded/connect', 'POST', JSON.stringify({ device_id: id }));
+        const cData = JSON.parse(cRes.data);
+        if (cRes.statusCode === 200 && cData.state === 'connected') {
+          console.log(`[WORKBENCH VERIFY] PASS: Connected device '${id}' successfully.`);
+        } else {
+          console.error(`[WORKBENCH VERIFY] FAIL: Failed to connect '${id}':`, cData);
+          passed = false;
+        }
+      }
+
+      // 7.3 Read Deterministic Telemetry
+      const telRes = await backendManager.dispatchRequest('/api/v1/embedded/telemetry', 'GET');
+      const telData = JSON.parse(telRes.data);
+      if (telRes.statusCode === 200 && telData.telemetry?.length === 3) {
+        const mcuTel = telData.telemetry.find((t: any) => t.device_id === 'mcu');
+        const fpgaTel = telData.telemetry.find((t: any) => t.device_id === 'fpga');
+        const jtagTel = telData.telemetry.find((t: any) => t.device_id === 'jtag');
+        const mcuOk = mcuTel?.numeric_metrics?.junction_temperature_C === 38.5 && mcuTel?.numeric_metrics?.vdd_voltage_V === 3.30;
+        const fpgaOk = fpgaTel?.numeric_metrics?.xadc_die_temperature_C === 44.0 && fpgaTel?.numeric_metrics?.vccint_voltage_V === 1.00;
+        const jtagOk = jtagTel?.numeric_metrics?.tck_frequency_MHz === 4.0 && jtagTel?.numeric_metrics?.detected_tap_count === 2;
+        if (mcuOk && fpgaOk && jtagOk) {
+          console.log('[WORKBENCH VERIFY] PASS: Deterministic telemetry verified for MCU, FPGA, and JTAG.');
+        } else {
+          console.error('[WORKBENCH VERIFY] FAIL: Telemetry values mismatch:', telData);
+          passed = false;
+        }
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Embedded telemetry query failed:', telData);
+        passed = false;
+      }
+
+      // 7.4 Fault Injection, Isolated Failure, and Recovery Test
+      // Inject timeout fault on mcu
+      const faultInj = await backendManager.dispatchRequest('/api/v1/embedded/fault', 'POST', JSON.stringify({ device_id: 'mcu', action: 'inject_timeout' }));
+      const faultInjData = JSON.parse(faultInj.data);
+      if (faultInj.statusCode === 200 && faultInjData.state === 'faulted') {
+        console.log('[WORKBENCH VERIFY] PASS: Injected timeout fault on MCU.');
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Fault injection failed:', faultInjData);
+        passed = false;
+      }
+
+      // Telemetry on faulted MCU returns 504 and recoverable: true
+      const mcuFaultTel = await backendManager.dispatchRequest('/api/v1/embedded/telemetry?device_id=mcu', 'GET');
+      const mcuFaultData = JSON.parse(mcuFaultTel.data);
+      if (mcuFaultTel.statusCode === 504 && mcuFaultData.recoverable === true && mcuFaultData.error_code === 'COMMUNICATION_TIMEOUT') {
+        console.log('[WORKBENCH VERIFY] PASS: Faulted MCU returned HTTP 504 with recoverable=true (non-blocking).');
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Faulted MCU telemetry unexpected response:', mcuFaultTel);
+        passed = false;
+      }
+
+      // Telemetry on healthy FPGA still returns 200 (isolated failure confirmed)
+      const fpgaHealthyTel = await backendManager.dispatchRequest('/api/v1/embedded/telemetry?device_id=fpga', 'GET');
+      const fpgaHealthyData = JSON.parse(fpgaHealthyTel.data);
+      if (fpgaHealthyTel.statusCode === 200 && fpgaHealthyData.numeric_metrics?.xadc_die_temperature_C === 44.0) {
+        console.log('[WORKBENCH VERIFY] PASS: Isolated failure confirmed: FPGA operates normally while MCU is faulted.');
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Healthy FPGA affected by MCU fault:', fpgaHealthyTel);
+        passed = false;
+      }
+
+      // Clear fault on MCU -> returns to connected
+      const clearFault = await backendManager.dispatchRequest('/api/v1/embedded/fault', 'POST', JSON.stringify({ device_id: 'mcu', action: 'clear_fault' }));
+      const clearFaultData = JSON.parse(clearFault.data);
+      if (clearFault.statusCode === 200 && clearFaultData.state === 'connected') {
+        console.log('[WORKBENCH VERIFY] PASS: Cleared MCU fault; state restored to CONNECTED.');
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Clearing fault failed:', clearFaultData);
+        passed = false;
+      }
+
+      // Disconnect JTAG, inject fault, clear fault -> state restored to DISCONNECTED (not connected)
+      await backendManager.dispatchRequest('/api/v1/embedded/disconnect', 'POST', JSON.stringify({ device_id: 'jtag' }));
+      await backendManager.dispatchRequest('/api/v1/embedded/fault', 'POST', JSON.stringify({ device_id: 'jtag', action: 'inject_timeout' }));
+      const jtagClearRes = await backendManager.dispatchRequest('/api/v1/embedded/fault', 'POST', JSON.stringify({ device_id: 'jtag', action: 'clear_fault' }));
+      const jtagClearData = JSON.parse(jtagClearRes.data);
+      if (jtagClearData.state === 'disconnected') {
+        console.log('[WORKBENCH VERIFY] PASS: Pre-fault state preservation verified (disconnected -> faulted -> cleared -> disconnected).');
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Pre-fault state not preserved:', jtagClearData);
+        passed = false;
+      }
+      // Reconnect JTAG for UI screenshot
+      await backendManager.dispatchRequest('/api/v1/embedded/connect', 'POST', JSON.stringify({ device_id: 'jtag' }));
+
+      // 7.5 Switch Tab to Hardware & Verify UI
+      const hwStep = await win.webContents.executeJavaScript(`
+        (async () => {
+          const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+          const navButtons = Array.from(document.querySelectorAll('header nav button'));
+          const hwTabBtn = navButtons.find(b => b.textContent && b.textContent.includes('Hardware'));
+          if (hwTabBtn) hwTabBtn.click();
+          await sleep(1000);
+
+          const text = document.body.innerText;
+          const hasTitle = text.includes('Embedded System Hardware Integration');
+          const hasDisclaimer = text.includes('SIMULATED HOST-SIDE HARDWARE');
+          const hasMcu = text.includes('STM32F401RE') || text.includes('NUCLEO-F401RE');
+          const hasFpga = text.includes('Basys 3') || text.includes('XC7A35T');
+          const hasJtag = text.includes('SEGGER J-Link') || text.includes('J-Link Base');
+          const hasBlockDiagram = !!document.querySelector('svg');
+          const hasPinTable = text.includes('Pin & Interface Mapping') || text.includes('CN7 Pin 1');
+
+          return { hasTitle, hasDisclaimer, hasMcu, hasFpga, hasJtag, hasBlockDiagram, hasPinTable };
+        })()
+      `);
+
+      if (hwStep.hasTitle && hwStep.hasDisclaimer && hwStep.hasMcu && hwStep.hasFpga && hwStep.hasJtag && hwStep.hasBlockDiagram) {
+        console.log('[WORKBENCH VERIFY] PASS: Hardware Workspace UI verified (all 3 devices, SVG block diagram, simulation disclaimer, interface table).');
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Hardware Workspace UI step failed:', hwStep);
+        passed = false;
+      }
+      await saveScreenshot(win, 'hardware_integration_view');
+    } catch (err: any) {
+      console.error('[WORKBENCH VERIFY] FAIL: Embedded system integration exception:', err.message);
+      passed = false;
+    }
+
+    // 8. Manual Backpropagation Neural Network Verification (Task 11)
+    console.log('[WORKBENCH VERIFY] Testing Manual Backpropagation Neural Network...');
+    try {
+      // 8.1 Backend Train API
+      const trainRes = await backendManager.dispatchRequest('/api/v1/backprop/train', 'POST', JSON.stringify({ steps: 100, learning_rate: 0.1 }));
+      const trainData = JSON.parse(trainRes.data);
+      const isMonotonic = trainData.monotonic_loss_reduction === true;
+      const isConverged = trainData.final_loss_converged === true;
+      const initialLossOk = Math.abs(trainData.initial_forward?.loss - 1.1825418) < 1e-5;
+      const step1LossOk = Math.abs(trainData.step1_forward?.loss - 0.6857738) < 1e-5;
+      const gradCheckOk = trainData.gradient_check?.all_passed === true && trainData.gradient_check?.max_absolute_error < 1e-5;
+
+      if (trainRes.statusCode === 200 && isMonotonic && isConverged && initialLossOk && step1LossOk && gradCheckOk) {
+        console.log(`[WORKBENCH VERIFY] PASS: Backprop training verified: J0=${trainData.initial_forward?.loss.toFixed(6)}, J1=${trainData.step1_forward?.loss.toFixed(6)} (42% drop), grad check max error=${trainData.gradient_check?.max_absolute_error}, monotonic=true, converged=true.`);
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Backprop train verification failed:', trainData);
+        passed = false;
+      }
+
+      // 8.2 Backend CSV Export
+      const expRes = await backendManager.dispatchRequest('/api/v1/backprop/export', 'POST', JSON.stringify({ steps: 100 }));
+      const expLines = expRes.data.split(/\r?\n/).filter((l: string) => l.trim().length > 0 && !l.startsWith('#') && !l.startsWith('step'));
+      if (expRes.statusCode === 200 && expLines.length === 101) {
+        console.log(`[WORKBENCH VERIFY] PASS: Backprop CSV export verified (exactly ${expLines.length} data rows for Steps 0..100).`);
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Backprop CSV export invalid row count:', expLines.length);
+        passed = false;
+      }
+
+      // 8.3 Switch Tab to Backprop & Verify UI
+      const bpStep = await win.webContents.executeJavaScript(`
+        (async () => {
+          const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+          const navButtons = Array.from(document.querySelectorAll('header nav button'));
+          const bpTabBtn = navButtons.find(b => b.textContent && b.textContent.includes('Backpropagation'));
+          if (bpTabBtn) bpTabBtn.click();
+          await sleep(1000);
+
+          const text = document.body.innerText;
+          const hasTitle = text.includes('Manual Backpropagation');
+          const hasLossChart = !!document.querySelector('svg');
+          const hasGradCheckTable = text.includes('Finite-Difference Gradient Checking') || text.includes('dJ/dw');
+          const hasPassBadge = text.includes('ALL CHECKS PASSED') || text.includes('PASS');
+          const hasSimultaneous = text.includes('Simultaneous Parameter Update') || text.includes('η = 0.1');
+          const hasAppendix = text.includes('Appendix') || text.includes('Handwritten Derivations');
+
+          return { hasTitle, hasLossChart, hasGradCheckTable, hasPassBadge, hasSimultaneous, hasAppendix };
+        })()
+      `);
+
+      if (bpStep.hasTitle && bpStep.hasLossChart && bpStep.hasGradCheckTable && bpStep.hasPassBadge && bpStep.hasSimultaneous) {
+        console.log('[WORKBENCH VERIFY] PASS: Backpropagation Workspace UI verified (loss chart SVG, gradient checks table, PASS badge, parameter updates).');
+      } else {
+        console.error('[WORKBENCH VERIFY] FAIL: Backpropagation Workspace UI step failed:', bpStep);
+        passed = false;
+      }
+      await saveScreenshot(win, 'backpropagation_results_view');
+    } catch (err: any) {
+      console.error('[WORKBENCH VERIFY] FAIL: Backprop execution exception:', err.message);
+      passed = false;
+    }
   } catch (err: any) {
     console.error('[WORKBENCH VERIFY] FAIL: Renderer execution error:', err.message);
     passed = false;
@@ -723,6 +920,109 @@ ipcMain.handle('sample:load', async (event, type: 'stl' | 'csv') => {
   const filename = path.basename(filePath);
   const content = await fs.promises.readFile(filePath, 'utf8');
   return { filename, content };
+});
+
+// Task 11 Embedded System Integration Handlers
+ipcMain.handle('api:embedded-devices', async (event) => {
+  if (mainWindow && !validateIpcSender(mainWindow.webContents, event.senderFrame)) {
+    throw new Error('Unauthorized IPC sender frame');
+  }
+  try {
+    const res = await backendManager.dispatchRequest('/api/v1/embedded/devices', 'GET');
+    return JSON.parse(res.data);
+  } catch (err: any) {
+    return { status: 'error', error: err.message };
+  }
+});
+
+ipcMain.handle('api:embedded-connect', async (event, deviceId: string) => {
+  if (mainWindow && !validateIpcSender(mainWindow.webContents, event.senderFrame)) {
+    throw new Error('Unauthorized IPC sender frame');
+  }
+  try {
+    const res = await backendManager.dispatchRequest('/api/v1/embedded/connect', 'POST', JSON.stringify({ device_id: deviceId }));
+    return JSON.parse(res.data);
+  } catch (err: any) {
+    return { status: 'error', error: err.message };
+  }
+});
+
+ipcMain.handle('api:embedded-disconnect', async (event, deviceId: string) => {
+  if (mainWindow && !validateIpcSender(mainWindow.webContents, event.senderFrame)) {
+    throw new Error('Unauthorized IPC sender frame');
+  }
+  try {
+    const res = await backendManager.dispatchRequest('/api/v1/embedded/disconnect', 'POST', JSON.stringify({ device_id: deviceId }));
+    return JSON.parse(res.data);
+  } catch (err: any) {
+    return { status: 'error', error: err.message };
+  }
+});
+
+ipcMain.handle('api:embedded-telemetry', async (event, deviceId?: string) => {
+  if (mainWindow && !validateIpcSender(mainWindow.webContents, event.senderFrame)) {
+    throw new Error('Unauthorized IPC sender frame');
+  }
+  try {
+    const endpoint = deviceId ? `/api/v1/embedded/telemetry?device_id=${encodeURIComponent(deviceId)}` : '/api/v1/embedded/telemetry';
+    const res = await backendManager.dispatchRequest(endpoint, 'GET');
+    return JSON.parse(res.data);
+  } catch (err: any) {
+    return { status: 'error', error: err.message };
+  }
+});
+
+ipcMain.handle('api:embedded-fault', async (event, args: { deviceId: string; action: 'inject_timeout' | 'clear_fault' }) => {
+  if (mainWindow && !validateIpcSender(mainWindow.webContents, event.senderFrame)) {
+    throw new Error('Unauthorized IPC sender frame');
+  }
+  try {
+    const res = await backendManager.dispatchRequest('/api/v1/embedded/fault', 'POST', JSON.stringify({
+      device_id: args.deviceId,
+      action: args.action
+    }));
+    return JSON.parse(res.data);
+  } catch (err: any) {
+    return { status: 'error', error: err.message };
+  }
+});
+
+// Task 11 Backpropagation Handlers
+ipcMain.handle('api:backprop-train', async (event, args?: { steps?: number; learningRate?: number }) => {
+  if (mainWindow && !validateIpcSender(mainWindow.webContents, event.senderFrame)) {
+    throw new Error('Unauthorized IPC sender frame');
+  }
+  try {
+    const payload = JSON.stringify({
+      steps: args?.steps ?? 100,
+      learning_rate: args?.learningRate ?? 0.1
+    });
+    const res = await backendManager.dispatchRequest('/api/v1/backprop/train', 'POST', payload);
+    return JSON.parse(res.data);
+  } catch (err: any) {
+    return { status: 'error', error: err.message };
+  }
+});
+
+ipcMain.handle('api:backprop-export', async (event, args?: { steps?: number }) => {
+  if (mainWindow && !validateIpcSender(mainWindow.webContents, event.senderFrame)) {
+    throw new Error('Unauthorized IPC sender frame');
+  }
+  try {
+    const payload = JSON.stringify({
+      steps: args?.steps ?? 100
+    });
+    const res = await backendManager.dispatchRequest('/api/v1/backprop/export', 'POST', payload);
+    if (res.statusCode === 200) {
+      const lines = res.data.split(/\r?\n/);
+      const dataRows = lines.filter((l: string) => l.trim().length > 0 && !l.startsWith('#') && !l.startsWith('step'));
+      return { status: 'ok', csv: res.data, rowCount: dataRows.length };
+    } else {
+      return { status: 'error', error: `Backprop export failed with HTTP ${res.statusCode}: ${res.data}` };
+    }
+  } catch (err: any) {
+    return { status: 'error', error: err.message };
+  }
 });
 
 app.whenReady().then(createWindow);

@@ -3,6 +3,8 @@
 #include "core/parsers/StlParser.h"
 #include "core/parsers/CsvParser.h"
 #include "core/benchmark/BenchmarkHarness.h"
+#include "core/embedded/EmbeddedController.h"
+#include "core/backprop/BackpropEngine.h"
 #include <chrono>
 #include <sstream>
 
@@ -13,6 +15,8 @@
 #endif
 
 namespace uew::api {
+
+static uew::embedded::EmbeddedController s_embedded_controller;
 
 void ApiRouter::register_routes(HttpServer& server) {
     server.set_route("GET", "/api/v1/health", &ApiRouter::handle_health);
@@ -26,6 +30,17 @@ void ApiRouter::register_routes(HttpServer& server) {
     server.set_route("GET", "/api/v1/benchmark/run", &ApiRouter::handle_benchmark_run);
     server.set_route("POST", "/api/v1/benchmark/export", &ApiRouter::handle_benchmark_export);
     server.set_route("GET", "/api/v1/benchmark/export", &ApiRouter::handle_benchmark_export);
+
+    // Embedded System Integration routes (Task 11)
+    server.set_route("GET", "/api/v1/embedded/devices", &ApiRouter::handle_embedded_devices);
+    server.set_route("POST", "/api/v1/embedded/connect", &ApiRouter::handle_embedded_connect);
+    server.set_route("POST", "/api/v1/embedded/disconnect", &ApiRouter::handle_embedded_disconnect);
+    server.set_route("GET", "/api/v1/embedded/telemetry", &ApiRouter::handle_embedded_telemetry);
+    server.set_route("POST", "/api/v1/embedded/fault", &ApiRouter::handle_embedded_fault);
+
+    // Manual Backpropagation routes (Task 11)
+    server.set_route("POST", "/api/v1/backprop/train", &ApiRouter::handle_backprop_train);
+    server.set_route("POST", "/api/v1/backprop/export", &ApiRouter::handle_backprop_export);
 }
 
 HttpResponse ApiRouter::handle_health(const HttpRequest& /*req*/) {
@@ -578,6 +593,358 @@ HttpResponse ApiRouter::handle_benchmark_export(const HttpRequest& req) {
     res.status_text = "OK";
     res.headers["Content-Type"] = "text/csv; charset=utf-8";
     res.headers["Content-Disposition"] = "attachment; filename=\"benchmark_results.csv\"";
+    res.body = csv;
+    return res;
+}
+
+// ---------------------------------------------------------------------------
+// Embedded System Integration Handlers (Task 11)
+// ---------------------------------------------------------------------------
+
+HttpResponse ApiRouter::handle_embedded_devices(const HttpRequest& /*req*/) {
+    Json root;
+    root["status"] = "ok";
+    root["is_simulated"] = true;
+    root["disclaimer"] = "SIMULATED HOST-SIDE HARDWARE — NO PHYSICAL CONNECTION REQUIRED";
+
+    auto devices = s_embedded_controller.get_devices();
+    auto caps = s_embedded_controller.get_all_capabilities();
+    std::vector<Json> j_devices;
+
+    for (size_t i = 0; i < devices.size(); ++i) {
+        Json jd;
+        jd["id"] = devices[i].id;
+        jd["name"] = devices[i].name;
+        jd["category"] = devices[i].category;
+        jd["target_silicon"] = devices[i].target_silicon;
+        jd["description"] = devices[i].description;
+        jd["host_interface"] = devices[i].host_interface;
+        jd["power_domains"] = devices[i].power_domains;
+        jd["physical_connectors"] = devices[i].physical_connectors;
+        jd["state"] = to_string(s_embedded_controller.get_device_state(devices[i].id));
+        jd["is_simulated"] = true;
+
+        Json jc;
+        std::vector<Json> j_proto;
+        for (const auto& p : caps[i].supported_protocols) j_proto.push_back(p);
+        jc["supported_protocols"] = j_proto;
+
+        std::vector<Json> j_rails;
+        for (const auto& r : caps[i].voltage_rails) j_rails.push_back(r);
+        jc["voltage_rails"] = j_rails;
+
+        std::vector<Json> j_targets;
+        for (const auto& t : caps[i].target_interfaces) j_targets.push_back(t);
+        jc["target_interfaces"] = j_targets;
+
+        jc["jtag_role"] = caps[i].jtag_role;
+        jc["interconnect_note"] = caps[i].interconnect_note;
+        jd["capabilities"] = jc;
+
+        j_devices.push_back(jd);
+    }
+    root["devices"] = j_devices;
+    return HttpResponse::ok_json(root);
+}
+
+HttpResponse ApiRouter::handle_embedded_connect(const HttpRequest& req) {
+    try {
+        Json body = Json::parse(req.body);
+        if (!body.contains("device_id") || !body["device_id"].is_string()) {
+            return HttpResponse::error_json(400, "Bad Request", "Missing or invalid 'device_id' in request body");
+        }
+        std::string id = body["device_id"].as_string();
+        auto state = s_embedded_controller.get_device_state(id);
+        if (state == uew::embedded::DeviceState::Faulted) {
+            Json err_root;
+            err_root["status"] = "error";
+            err_root["error_code"] = "DEVICE_FAULTED";
+            err_root["device_id"] = id;
+            err_root["message"] = "Cannot connect to device while in Faulted state. Clear the fault before connecting.";
+            err_root["recoverable"] = true;
+            HttpResponse res;
+            res.status_code = 400;
+            res.status_text = "Bad Request";
+            res.headers["Content-Type"] = "application/json";
+            res.body = err_root.serialize();
+            return res;
+        }
+
+        bool ok = s_embedded_controller.connect_device(id);
+        if (!ok) {
+            return HttpResponse::error_json(404, "Not Found", "Device '" + id + "' not found");
+        }
+
+        Json root;
+        root["status"] = "ok";
+        root["device_id"] = id;
+        root["state"] = to_string(s_embedded_controller.get_device_state(id));
+        root["is_simulated"] = true;
+        return HttpResponse::ok_json(root);
+    } catch (const std::exception& e) {
+        return HttpResponse::error_json(400, "Bad Request", std::string("Malformed JSON body: ") + e.what());
+    }
+}
+
+HttpResponse ApiRouter::handle_embedded_disconnect(const HttpRequest& req) {
+    try {
+        Json body = Json::parse(req.body);
+        if (!body.contains("device_id") || !body["device_id"].is_string()) {
+            return HttpResponse::error_json(400, "Bad Request", "Missing or invalid 'device_id' in request body");
+        }
+        std::string id = body["device_id"].as_string();
+        bool ok = s_embedded_controller.disconnect_device(id);
+        if (!ok) {
+            return HttpResponse::error_json(404, "Not Found", "Device '" + id + "' not found");
+        }
+
+        Json root;
+        root["status"] = "ok";
+        root["device_id"] = id;
+        root["state"] = to_string(s_embedded_controller.get_device_state(id));
+        root["is_simulated"] = true;
+        return HttpResponse::ok_json(root);
+    } catch (const std::exception& e) {
+        return HttpResponse::error_json(400, "Bad Request", std::string("Malformed JSON body: ") + e.what());
+    }
+}
+
+HttpResponse ApiRouter::handle_embedded_telemetry(const HttpRequest& req) {
+    std::string device_id = req.get_query_param("device_id");
+
+    if (!device_id.empty()) {
+        auto telem = s_embedded_controller.get_device_telemetry(device_id);
+        if (!telem.success) {
+            Json root;
+            root["status"] = "error";
+            root["error_code"] = telem.error_code;
+            root["device_id"] = device_id;
+            root["message"] = telem.error_message;
+            root["recoverable"] = telem.recoverable;
+            root["is_simulated"] = true;
+
+            int code = (telem.error_code == "COMMUNICATION_TIMEOUT") ? 504 : 400;
+            HttpResponse res;
+            res.status_code = code;
+            res.status_text = (code == 504) ? "Gateway Timeout" : "Bad Request";
+            res.headers["Content-Type"] = "application/json";
+            res.body = root.serialize();
+            return res;
+        }
+
+        Json root;
+        root["status"] = "ok";
+        root["device_id"] = telem.data.device_id;
+        root["timestamp_ms"] = telem.data.timestamp_ms;
+        root["is_simulated"] = true;
+
+        Json num_m;
+        for (const auto& kv : telem.data.numeric_metrics) {
+            num_m[kv.first] = kv.second;
+        }
+        root["numeric_metrics"] = num_m;
+
+        Json text_m;
+        for (const auto& kv : telem.data.text_metrics) {
+            text_m[kv.first] = kv.second;
+        }
+        root["text_metrics"] = text_m;
+
+        return HttpResponse::ok_json(root);
+    }
+
+    // Query all connected devices
+    auto all_telem = s_embedded_controller.get_all_telemetry();
+    Json root;
+    root["status"] = "ok";
+    root["is_simulated"] = true;
+    std::vector<Json> j_telems;
+    for (const auto& t : all_telem) {
+        Json jt;
+        jt["success"] = t.success;
+        if (t.success) {
+            jt["device_id"] = t.data.device_id;
+            jt["timestamp_ms"] = t.data.timestamp_ms;
+            Json nm;
+            for (const auto& kv : t.data.numeric_metrics) nm[kv.first] = kv.second;
+            jt["numeric_metrics"] = nm;
+            Json tm;
+            for (const auto& kv : t.data.text_metrics) tm[kv.first] = kv.second;
+            jt["text_metrics"] = tm;
+        } else {
+            jt["device_id"] = t.data.device_id.empty() ? "unknown" : t.data.device_id;
+            jt["error_code"] = t.error_code;
+            jt["message"] = t.error_message;
+            jt["recoverable"] = t.recoverable;
+        }
+        j_telems.push_back(jt);
+    }
+    root["telemetry"] = j_telems;
+    return HttpResponse::ok_json(root);
+}
+
+HttpResponse ApiRouter::handle_embedded_fault(const HttpRequest& req) {
+    try {
+        Json body = Json::parse(req.body);
+        if (!body.contains("device_id") || !body["device_id"].is_string()
+            || !body.contains("action") || !body["action"].is_string()) {
+            return HttpResponse::error_json(400, "Bad Request", "Missing or invalid 'device_id' or 'action' in request body");
+        }
+        std::string id = body["device_id"].as_string();
+        std::string action = body["action"].as_string();
+
+        if (action == "inject_timeout") {
+            bool ok = s_embedded_controller.inject_fault(id, "timeout");
+            if (!ok) return HttpResponse::error_json(404, "Not Found", "Device '" + id + "' not found");
+        } else if (action == "clear_fault") {
+            bool ok = s_embedded_controller.clear_fault(id);
+            if (!ok) return HttpResponse::error_json(404, "Not Found", "Device '" + id + "' not found");
+        } else {
+            return HttpResponse::error_json(400, "Bad Request", "Unsupported fault action '" + action + "'. Supported: 'inject_timeout', 'clear_fault'");
+        }
+
+        Json root;
+        root["status"] = "ok";
+        root["device_id"] = id;
+        root["action"] = action;
+        root["state"] = to_string(s_embedded_controller.get_device_state(id));
+        root["is_simulated"] = true;
+        return HttpResponse::ok_json(root);
+    } catch (const std::exception& e) {
+        return HttpResponse::error_json(400, "Bad Request", std::string("Malformed JSON body: ") + e.what());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Manual Backpropagation Handlers (Task 11)
+// ---------------------------------------------------------------------------
+
+HttpResponse ApiRouter::handle_backprop_train(const HttpRequest& req) {
+    int steps = 100;
+    double lr = 0.1;
+    if (!req.body.empty()) {
+        try {
+            Json body = Json::parse(req.body);
+            if (body.contains("steps") && body["steps"].is_number()) {
+                steps = static_cast<int>(body["steps"].as_number());
+            }
+            if (body.contains("learning_rate") && body["learning_rate"].is_number()) {
+                lr = body["learning_rate"].as_number();
+            }
+        } catch (...) {
+            // Use defaults on parse error
+        }
+    }
+    // Fixed baseline boundaries: steps in [1, 1000], lr in (0, 1.0]
+    if (steps <= 0 || steps > 1000) steps = 100;
+    if (lr <= 0.0 || lr > 1.0) lr = 0.1;
+
+    auto suite = uew::backprop::BackpropEngine::run_training(1.0, 2.0, {0.5, 0.0, 1.0, 0.0}, lr, steps);
+
+    Json root;
+    root["status"] = "ok";
+    root["summary"] = suite.summary;
+    root["monotonic_loss_reduction"] = suite.monotonic_loss_reduction;
+    root["final_loss_converged"] = suite.final_loss_converged;
+
+    // Initial forward
+    Json j_f0;
+    j_f0["x"] = suite.initial_forward.x;
+    j_f0["y"] = suite.initial_forward.y;
+    j_f0["z"] = suite.initial_forward.z;
+    j_f0["h"] = suite.initial_forward.h;
+    j_f0["y_hat"] = suite.initial_forward.y_hat;
+    j_f0["error"] = suite.initial_forward.error;
+    j_f0["loss"] = suite.initial_forward.loss;
+    root["initial_forward"] = j_f0;
+
+    // Initial gradients
+    Json j_g0;
+    j_g0["dJ_dw"] = suite.initial_gradients.dJ_dw;
+    j_g0["dJ_db"] = suite.initial_gradients.dJ_db;
+    j_g0["dJ_dv"] = suite.initial_gradients.dJ_dv;
+    j_g0["dJ_dc"] = suite.initial_gradients.dJ_dc;
+    root["initial_gradients"] = j_g0;
+
+    // Step 1 parameters
+    Json j_p1;
+    j_p1["w"] = suite.step1_parameters.w;
+    j_p1["b"] = suite.step1_parameters.b;
+    j_p1["v"] = suite.step1_parameters.v;
+    j_p1["c"] = suite.step1_parameters.c;
+    root["step1_parameters"] = j_p1;
+
+    // Step 1 forward
+    Json j_f1;
+    j_f1["y_hat"] = suite.step1_forward.y_hat;
+    j_f1["loss"] = suite.step1_forward.loss;
+    root["step1_forward"] = j_f1;
+
+    // Gradient check report
+    Json j_gc;
+    j_gc["epsilon"] = suite.gradient_check.epsilon;
+    j_gc["tolerance"] = suite.gradient_check.tolerance;
+    j_gc["max_absolute_error"] = suite.gradient_check.max_absolute_error;
+    j_gc["all_passed"] = suite.gradient_check.all_passed;
+    std::vector<Json> j_checks;
+    for (const auto& chk : suite.gradient_check.checks) {
+        Json jc;
+        jc["parameter"] = chk.parameter_name;
+        jc["analytical_gradient"] = chk.analytical_gradient;
+        jc["numerical_gradient"] = chk.numerical_gradient;
+        jc["absolute_error"] = chk.absolute_error;
+        jc["passed"] = chk.passed;
+        j_checks.push_back(jc);
+    }
+    j_gc["checks"] = j_checks;
+    root["gradient_check"] = j_gc;
+
+    // Training history (101 items)
+    std::vector<Json> j_hist;
+    for (const auto& r : suite.history) {
+        Json jr;
+        jr["step"] = static_cast<int64_t>(r.step);
+        jr["loss"] = r.loss;
+        jr["y_hat"] = r.y_hat;
+        jr["w"] = r.params.w;
+        jr["b"] = r.params.b;
+        jr["v"] = r.params.v;
+        jr["c"] = r.params.c;
+        jr["grad_w"] = r.grads.dJ_dw;
+        jr["grad_b"] = r.grads.dJ_db;
+        jr["grad_v"] = r.grads.dJ_dv;
+        jr["grad_c"] = r.grads.dJ_dc;
+        j_hist.push_back(jr);
+    }
+    root["history"] = j_hist;
+    root["total_records"] = static_cast<int64_t>(suite.history.size());
+
+    return HttpResponse::ok_json(root);
+}
+
+HttpResponse ApiRouter::handle_backprop_export(const HttpRequest& req) {
+    int steps = 100;
+    double lr = 0.1;
+    if (!req.body.empty()) {
+        try {
+            Json body = Json::parse(req.body);
+            if (body.contains("steps") && body["steps"].is_number()) {
+                steps = static_cast<int>(body["steps"].as_number());
+            }
+        } catch (...) {
+            // Use defaults on parse error
+        }
+    }
+    if (steps <= 0 || steps > 1000) steps = 100;
+
+    auto suite = uew::backprop::BackpropEngine::run_training(1.0, 2.0, {0.5, 0.0, 1.0, 0.0}, lr, steps);
+    std::string csv = uew::backprop::BackpropEngine::export_csv(suite);
+
+    HttpResponse res;
+    res.status_code = 200;
+    res.status_text = "OK";
+    res.headers["Content-Type"] = "text/csv; charset=utf-8";
+    res.headers["Content-Disposition"] = "attachment; filename=\"backpropagation_loss_history.csv\"";
     res.body = csv;
     return res;
 }

@@ -38,6 +38,28 @@ const api: WorkbenchAPI = {
   },
   exportBenchmarkCsv: async (config?: any) => {
     return ipcRenderer.invoke('api:export-benchmark', config);
+  },
+  // Task 11 APIs
+  getEmbeddedDevices: async () => {
+    return ipcRenderer.invoke('api:embedded-devices');
+  },
+  connectEmbeddedDevice: async (deviceId: string) => {
+    return ipcRenderer.invoke('api:embedded-connect', deviceId);
+  },
+  disconnectEmbeddedDevice: async (deviceId: string) => {
+    return ipcRenderer.invoke('api:embedded-disconnect', deviceId);
+  },
+  getEmbeddedTelemetry: async (deviceId?: string) => {
+    return ipcRenderer.invoke('api:embedded-telemetry', deviceId);
+  },
+  injectEmbeddedFault: async (deviceId: string, action: 'inject_timeout' | 'clear_fault') => {
+    return ipcRenderer.invoke('api:embedded-fault', { deviceId, action });
+  },
+  runBackpropTrain: async (steps?: number, learningRate?: number) => {
+    return ipcRenderer.invoke('api:backprop-train', { steps, learningRate });
+  },
+  exportBackpropCsv: async (steps?: number) => {
+    return ipcRenderer.invoke('api:backprop-export', { steps });
   }
 };
 

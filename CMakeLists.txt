@@ -33,6 +33,19 @@ add_library(uew_core
     src/core/benchmark/ParallelExecutor.cpp
     src/core/benchmark/BenchmarkHarness.h
     src/core/benchmark/BenchmarkHarness.cpp
+    src/core/embedded/EmbeddedModels.h
+    src/core/embedded/IDeviceAdapter.h
+    src/core/embedded/MockMcuAdapter.h
+    src/core/embedded/MockMcuAdapter.cpp
+    src/core/embedded/MockFpgaAdapter.h
+    src/core/embedded/MockFpgaAdapter.cpp
+    src/core/embedded/MockJtagAdapter.h
+    src/core/embedded/MockJtagAdapter.cpp
+    src/core/embedded/EmbeddedController.h
+    src/core/embedded/EmbeddedController.cpp
+    src/core/backprop/BackpropModels.h
+    src/core/backprop/BackpropEngine.h
+    src/core/backprop/BackpropEngine.cpp
 )
 
 target_include_directories(uew_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -71,6 +84,18 @@ if(BUILD_TESTING AND UEW_BUILD_TESTS)
     )
     target_link_libraries(uew_benchmark_tests PRIVATE uew_core)
     add_test(NAME uew_benchmark_tests COMMAND uew_benchmark_tests)
+
+    add_executable(uew_embedded_tests
+        tests/test_embedded.cpp
+    )
+    target_link_libraries(uew_embedded_tests PRIVATE uew_core)
+    add_test(NAME uew_embedded_tests COMMAND uew_embedded_tests)
+
+    add_executable(uew_backprop_tests
+        tests/test_backprop.cpp
+    )
+    target_link_libraries(uew_backprop_tests PRIVATE uew_core)
+    add_test(NAME uew_backprop_tests COMMAND uew_backprop_tests)
 endif()
 
 # ---------------------------------------------------------------------------
